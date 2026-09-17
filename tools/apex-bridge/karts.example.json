@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy to karts.json. STABLE map: which transponder is bolted into which kart. The transponder does not move, so this is equipment data and changes only when hardware does. Fill it once and operators work in kart numbers everywhere, never retyping a transponder id. Build it by driving each kart over the loop once and reading the unmapped ids from GET /karts. The real karts.json is git-ignored because it is this venue's wiring.",
+  "karts": {
+    "3":  { "transponder": "23", "label": "", "active": true, "updatedAt": null },
+    "5":  { "transponder": "", "label": "", "active": true, "updatedAt": null },
+    "11": { "transponder": "", "label": "", "active": true, "updatedAt": null },
+    "12": { "transponder": "", "label": "", "active": true, "updatedAt": null }
+  }
+}

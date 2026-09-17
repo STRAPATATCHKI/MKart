@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy to roster.json. Maps an Apex transponder id (from the 30001-range live feed) to the driver sitting in that kart FOR THE CURRENT SESSION. A transponder is physical hardware and gets reused by a different driver every session, so this is refreshed per session — it is NOT the stable equipment map (see karts.example.json). Edits are picked up live, no restart. The real roster.json is git-ignored: it contains customer names.",
+  "roster": {
+    "23": { "kartNumber": 3, "name": "NOM DU PILOTE" }
+  }
+}

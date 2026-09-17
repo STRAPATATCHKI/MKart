@@ -1,0 +1,117 @@
+/* MegaKart chrono panel — lives inside the dashboard's existing dark surface language. */
+
+.chrono {
+  margin-top: 18px;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+}
+
+.chrono-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.chrono-head h2 { margin: 6px 0 4px; font-size: 19px; font-weight: 800; }
+.chrono-head > div > p { margin: 0; max-width: 62ch; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.chrono-head strong { color: var(--text); }
+
+.chrono-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.chrono-clock {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  font-size: 22px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.chrono-start, .chrono-stop, .chrono-ghost {
+  min-height: 44px; padding: 0 18px;
+  border-radius: 10px; border: 1px solid transparent;
+  font: inherit; font-size: 14px; font-weight: 800; cursor: pointer;
+}
+.chrono-start { background: var(--lime); color: #0a0d05; }
+.chrono-start:hover:not(:disabled) { background: var(--lime-dim); }
+.chrono-stop { background: var(--danger); color: #1a0505; }
+.chrono-ghost { background: transparent; border-color: var(--line); color: var(--muted); }
+.chrono-start:disabled, .chrono-stop:disabled, .chrono-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* The honesty strip: an empty leaderboard must never be ambiguous. */
+.chrono-status {
+  margin: 14px 0 0;
+  padding: 9px 12px;
+  border-left: 3px solid var(--line);
+  border-radius: 0 8px 8px 0;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 12.5px; font-weight: 600; line-height: 1.45;
+}
+.chrono-status.is-ok { border-left-color: var(--lime); color: #c8cfc0; }
+.chrono-status.is-warn { border-left-color: #e0b341; color: #e8d5a3; }
+.chrono-status.is-bad { border-left-color: var(--danger); color: #ffb3b2; }
+
+.chrono-table { width: 100%; margin-top: 14px; border-collapse: collapse; }
+.chrono-table th {
+  padding: 0 10px 8px; text-align: left;
+  color: var(--muted); font-size: 9.5px; font-weight: 800; letter-spacing: 0.18em;
+}
+.chrono-table th:nth-child(n+4) { text-align: right; }
+.chrono-table td { padding: 11px 10px; border-top: 1px solid var(--line-soft); font-size: 14px; }
+.chrono-table tr.is-leader td { background: rgba(216, 255, 53, 0.05); }
+.chrono-pos { width: 46px; color: var(--lime); font-weight: 800; font-variant-numeric: tabular-nums; }
+.chrono-name { font-weight: 700; }
+.chrono-unknown { color: var(--muted); font-weight: 600; font-style: italic; }
+.chrono-num { text-align: right; font-variant-numeric: tabular-nums; }
+.chrono-num.is-fastest { color: var(--lime); font-weight: 800; }
+
+.chrono-empty {
+  margin-top: 14px; padding: 26px 14px;
+  border: 1px dashed var(--line); border-radius: 10px;
+  color: var(--muted); font-size: 13px; text-align: center;
+}
+
+.chrono-integrity {
+  margin-top: 14px; padding: 11px 13px;
+  border-radius: 9px;
+  background: rgba(216, 255, 53, 0.06);
+  display: grid; gap: 3px;
+}
+.chrono-integrity strong { font-size: 13px; }
+.chrono-integrity span { color: var(--muted); font-size: 12px; }
+.chrono-integrity.is-suspect { background: rgba(255, 107, 105, 0.1); }
+.chrono-integrity.is-suspect strong { color: #ffb3b2; }
+
+/* The double-read guard is a guess about this track, so it stays visible and correctable. */
+.chrono-guard { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.chrono-guard label { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.chrono-guard-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chrono-guard-row input {
+  width: 96px; height: 38px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--text);
+  font: inherit; font-size: 14px; font-variant-numeric: tabular-nums;
+}
+.chrono-guard-row span { color: var(--muted); font-size: 12px; }
+.chrono-guard-row button {
+  min-height: 38px; padding: 0 14px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: transparent; color: var(--text);
+  font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.chrono-guard-row button:hover:not(:disabled) { border-color: var(--lime); color: var(--lime); }
+.chrono-guard-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+.chrono-guard-warn {
+  margin: 8px 0 0; padding: 8px 10px;
+  border-left: 3px solid #e0b341; border-radius: 0 6px 6px 0;
+  background: rgba(224, 179, 65, 0.09);
+  color: #e8d5a3; font-size: 12px; line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+  .chrono { padding: 15px 14px 16px; }
+  .chrono-head { flex-direction: column; gap: 12px; }
+  .chrono-actions { width: 100%; }
+  .chrono-start, .chrono-stop { flex: 1; }
+  /* Kart and last-lap are the first things to go: position, pilot, laps and gap carry the race. */
+  .chrono-table th:nth-child(3), .chrono-table td:nth-child(3),
+  .chrono-table th:nth-child(5), .chrono-table td:nth-child(5) { display: none; }
+}

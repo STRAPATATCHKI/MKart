@@ -1,0 +1,149 @@
+/* Liste d'attente (caisse). Counter-legible sizes: this screen is read standing up, quickly,
+   sometimes with a customer watching — nothing here inherits the dashboard's 6-7px labels. */
+
+.fa { padding-bottom: 40px; }
+
+.fa-headline { display: flex; align-items: center; gap: 10px; }
+.fa-sync { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; }
+.fa-sync i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.fa-sync.is-ok { color: var(--lime); border-color: rgba(216, 255, 53, 0.35); }
+.fa-sync.is-bad { color: var(--danger); border-color: rgba(255, 107, 105, 0.4); }
+
+.fa-banner { margin: 14px 0 0; padding: 11px 13px; border-left: 3px solid var(--danger); border-radius: 0 8px 8px 0; background: rgba(255, 107, 105, 0.1); color: #ffb3b2; font-size: 13px; line-height: 1.5; }
+.fa-banner.is-warn { border-left-color: #e0b341; background: rgba(224, 179, 65, 0.1); color: #e8d5a3; }
+.fa-banner code { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 5px; background: rgba(0, 0, 0, 0.35); font-size: 12px; }
+
+.fa-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0 0; }
+.fa-tiles > div { padding: 14px 15px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface); display: grid; gap: 3px; }
+.fa-tiles span { color: var(--muted); font-size: 9.5px; font-weight: 800; letter-spacing: 0.16em; }
+.fa-tiles strong { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.fa-tiles b { color: var(--muted); font-size: 11px; font-weight: 600; }
+
+.fa-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0 12px; flex-wrap: wrap; }
+.fa-filters { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.fa-filters button { min-height: 36px; padding: 0 16px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.fa-filters button.is-on { background: var(--lime); color: #0a0d05; }
+.fa-operator { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.fa-operator input { width: 64px; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 14px; font-weight: 800; text-align: center; text-transform: uppercase; }
+
+.fa-empty { padding: 44px 20px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 14px; text-align: center; }
+
+.fa-list { display: grid; gap: 8px; }
+.fa-row { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.fa-row.is-payee { border-color: rgba(216, 255, 53, 0.25); }
+.fa-row.is-absent, .fa-row.is-annulee { opacity: 0.55; }
+
+.fa-main { display: grid; grid-template-columns: 110px 1.4fr 1.6fr 110px 110px auto; align-items: center; gap: 14px; padding: 13px 15px; cursor: pointer; }
+.fa-main:hover { background: var(--surface-2); }
+
+.fa-code strong { display: block; font-size: 17px; font-weight: 800; letter-spacing: 0.03em; font-variant-numeric: tabular-nums; }
+.fa-code span { color: var(--muted); font-size: 11px; }
+
+.fa-who strong { display: block; font-size: 14px; font-weight: 700; }
+.fa-who span { color: var(--muted); font-size: 12.5px; }
+.fa-who a { color: inherit; text-decoration: none; }
+.fa-who a:hover { color: var(--lime); }
+.fa-who em { font-style: normal; opacity: 0.7; }
+
+.fa-pilots { display: flex; flex-wrap: wrap; gap: 5px; }
+.fa-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 999px; background: var(--surface-3); font-size: 11.5px; font-weight: 700; }
+.fa-chip b { padding: 1px 5px; border-radius: 4px; background: rgba(0, 0, 0, 0.35); font-size: 10px; }
+.fa-chip.is-blue { box-shadow: inset 0 0 0 1px #2f6fd0; }
+.fa-chip.is-black { box-shadow: inset 0 0 0 1px #6b7280; }
+.fa-chip.is-green { box-shadow: inset 0 0 0 1px #6ec83a; }
+
+.fa-pay { color: var(--muted); font-size: 12.5px; font-weight: 700; }
+
+.fa-status { padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; text-align: center; background: var(--surface-3); color: var(--muted); }
+.fa-status.is-payee { background: rgba(216, 255, 53, 0.16); color: var(--lime); }
+.fa-status.is-en_piste { background: rgba(216, 255, 53, 0.1); color: var(--lime); }
+.fa-status.is-absent, .fa-status.is-annulee { background: rgba(255, 107, 105, 0.12); color: #ffb3b2; }
+
+.fa-cash, .fa-undo { min-height: 44px; padding: 0 18px; border: 0; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+.fa-cash { background: var(--lime); color: #0a0d05; }
+.fa-cash:hover { background: var(--lime-dim); }
+.fa-undo { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.fa-undo:hover { border-color: var(--lime); color: var(--lime); }
+
+.fa-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 16px 15px 18px; border-top: 1px solid var(--line-soft); background: var(--surface-2); }
+.fa-detail h4 { margin: 0 0 10px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: 0.16em; }
+.fa-detail-side h4:nth-of-type(2) { margin-top: 16px; }
+
+.fa-assign { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.fa-assign span { font-size: 13.5px; font-weight: 700; }
+.fa-assign em { display: block; color: var(--muted); font-size: 11px; font-style: normal; font-weight: 600; }
+.fa-assign select { min-width: 120px; height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
+
+.fa-primary { min-height: 40px; margin-top: 6px; padding: 0 16px; border: 0; border-radius: 9px; background: var(--lime); color: #0a0d05; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+
+/* The hand-off list: what the operator types into GoKarts. Monospaced so the columns line up. */
+.fa-gokarts { margin: 0; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 9px; background: var(--bg); color: var(--text); font-family: ui-monospace, Consolas, monospace; font-size: 13px; line-height: 1.7; white-space: pre; overflow-x: auto; }
+
+.fa-more { display: flex; flex-wrap: wrap; gap: 6px; }
+.fa-more button { min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.fa-more button:hover { border-color: var(--lime); color: var(--lime); }
+.fa-more .fa-danger { color: #ffb3b2; }
+.fa-more .fa-danger:hover { border-color: var(--danger); color: var(--danger); }
+
+.fa-hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.fa-hint strong { color: var(--text); }
+
+/* Copy-to-GoKarts controls */
+.fa-toolbar-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.fa-session-copy { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px 5px 13px; border: 1px solid rgba(216, 255, 53, 0.3); border-radius: 10px; background: rgba(216, 255, 53, 0.06); }
+.fa-session-copy > span { color: var(--lime); font-size: 12px; font-weight: 800; }
+
+.fa-copybar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.fa-copy {
+  min-height: 34px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-3); color: var(--text);
+  font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.fa-copy:hover:not(:disabled) { border-color: var(--lime); color: var(--lime); }
+.fa-copy:disabled { opacity: 0.45; cursor: not-allowed; }
+.fa-copy.is-done { border-color: var(--lime); background: rgba(216, 255, 53, 0.16); color: var(--lime); }
+.fa-copy.is-failed { border-color: var(--danger); color: #ffb3b2; }
+.fa-session-copy .fa-copy { background: var(--lime); border-color: var(--lime); color: #0a0d05; }
+.fa-session-copy .fa-copy:hover:not(:disabled) { background: var(--lime-dim); color: #0a0d05; }
+.fa-session-copy .fa-copy.is-done { background: #0a0d05; color: var(--lime); }
+
+/* Tablet: drop the columns that carry least, keep the cash button reachable. */
+@media (max-width: 1180px) {
+  .fa-main { grid-template-columns: 96px 1.3fr 1.4fr 100px auto; }
+  .fa-pay { display: none; }
+  .fa-tiles { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 860px) {
+  .fa-main { grid-template-columns: 1fr auto; grid-auto-rows: min-content; gap: 8px; }
+  .fa-pilots, .fa-status { grid-column: 1 / -1; }
+  .fa-action { grid-column: 1 / -1; }
+  .fa-cash, .fa-undo { width: 100%; }
+  .fa-detail { grid-template-columns: 1fr; }
+}
+
+/* Assisted typing panel. Rehearsal first, real run second — the order is the safety feature. */
+/* Anchored under the whole toolbar rather than inside the little chip that triggers it,
+   which would otherwise squash the toolbar layout. */
+.fa-toolbar { position: relative; }
+.ty-panel { position: absolute; left: 0; right: 0; top: 100%; z-index: 20; margin-top: 8px; padding: 14px 16px; border: 1px solid rgba(216,255,53,.35); border-radius: 12px; background: var(--surface); box-shadow: 0 18px 40px rgba(0,0,0,.55); }
+.ty-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.ty-head strong { font-size: 14px; }
+.ty-close { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.ty-close:hover { color: var(--text); }
+.ty-steps { margin: 0 0 12px; padding-left: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.ty-steps strong { color: var(--text); }
+.ty-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.ty-row label { display: grid; gap: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.ty-row select { height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
+.ty-count { color: var(--lime); font-size: 12px; font-weight: 800; }
+.ty-preview { margin: 0 0 12px; padding: 10px 12px; max-height: 140px; overflow: auto; border: 1px dashed var(--line); border-radius: 8px; background: var(--bg); font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; line-height: 1.6; }
+.ty-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.ty-go { min-height: 34px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--lime); color: #0a0d05; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.ty-go:disabled { opacity: .5; cursor: progress; }
+.ty-result { margin-top: 12px; padding: 10px 12px; border-radius: 8px; display: grid; gap: 4px; font-size: 12.5px; }
+.ty-result.is-ok { background: rgba(216,255,53,.1); }
+.ty-result.is-bad { background: rgba(255,107,105,.1); color: #ffb3b2; }
+.ty-result span { color: var(--muted); }
+.ty-log { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: rgba(0,0,0,.35); color: var(--muted); font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; }

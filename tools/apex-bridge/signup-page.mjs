@@ -1,0 +1,394 @@
+// Client sign-up form, served by the bridge to phones on the venue Wi-Fi (GET /inscription).
+// One person registers the whole group: their own details, then a card per friend. Age is picked
+// on a wheel (no keyboard on a phone), which decides the category — CADET drives the junior karts
+// (8-14 and at least 150 cm), SENIOR the adult ones — and every player picks a pilot colour
+// (the 8 drivers in public/drivers, served at /assets/driver-N.png).
+// Plain HTML/CSS/JS on purpose: served over http from this PC, so it posts straight back to the
+// bridge with no cloud service, no build step and no mixed-content problem.
+export const DRIVER_COLORS = [
+  { id: 1, label: "Violet", hex: "#8b5cf6" },
+  { id: 2, label: "Jaune", hex: "#f5d90a" },
+  { id: 3, label: "Orange", hex: "#f97316" },
+  { id: 4, label: "Vert", hex: "#45c74a" },
+  { id: 5, label: "Noir", hex: "#3a4048" },
+  { id: 6, label: "Bleu", hex: "#2b7de9" },
+  { id: 7, label: "Rouge", hex: "#e23b3b" },
+  { id: 8, label: "Blanc", hex: "#e9eef4" },
+];
+
+export const SIGNUP_PAGE = `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050604">
+<title>Inscription pilote · MegaKart Fès</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,700;0,800;1,900&display=swap">
+<style>
+  :root { --ink:#050604; --surface:#0e110d; --surface-2:#141811; --line:#262d24; --text:#f4f6ed; --muted:#8a9185; --lime:#d8ff35; --danger:#ff6b69;
+    --display:"Barlow Condensed","Arial Narrow","Segoe UI",sans-serif; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100dvh; padding:20px 16px 40px; color:var(--text);
+    background:radial-gradient(120% 45% at 50% -10%, rgba(216,255,53,.14), transparent 60%), var(--ink);
+    font-family:Inter,"Segoe UI",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  .wrap { width:100%; max-width:30rem; margin:0 auto; display:grid; gap:18px; }
+  header { display:flex; align-items:center; gap:14px; }
+  .logo { width:104px; height:62px; flex:0 0 auto; background:url("/assets/logo.png") center/contain no-repeat; }
+  .kicker { color:var(--lime); font-size:11px; font-weight:900; letter-spacing:.22em; text-transform:uppercase; }
+  h1 { margin:2px 0 0; font:italic 900 34px/1 var(--display); text-transform:uppercase; }
+  p.lead { margin:0; color:var(--muted); font-size:14px; line-height:1.5; }
+  form { display:grid; gap:16px; }
+  fieldset { margin:0; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface); display:grid; gap:12px; }
+  legend { padding:0 8px; color:var(--lime); font-size:11px; font-weight:900; letter-spacing:.18em; text-transform:uppercase; }
+  .player-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .player-head strong { font:italic 900 20px/1 var(--display); text-transform:uppercase; }
+  label, .field { display:grid; gap:6px; font-size:13px; font-weight:700; }
+  label span em, .field span em { color:var(--muted); font-style:normal; font-weight:600; }
+  input[type=text], input[type=tel], input[type=email] {
+    width:100%; min-height:52px; padding:12px 14px; border:1px solid var(--line); border-radius:10px;
+    color:var(--text); background:var(--surface-2); font:inherit; font-size:16px; }
+  input:focus-visible, button:focus-visible { outline:2px solid var(--lime); outline-offset:1px; }
+  /* Age / height wheel: a snapping scroller, so a phone never opens the keyboard for a number */
+  .wheel { position:relative; border:1px solid var(--line); border-radius:12px; background:var(--surface-2); overflow:hidden; }
+  .wheel-line { position:absolute; left:0; right:0; top:44px; height:44px; border-top:1px solid rgba(216,255,53,.45); border-bottom:1px solid rgba(216,255,53,.45);
+    background:rgba(216,255,53,.06); pointer-events:none; }
+  .wheel-scroll { position:relative; height:132px; overflow-y:auto; scroll-snap-type:y mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  .wheel-scroll::-webkit-scrollbar { display:none; }
+  .wheel-item { height:44px; display:grid; place-items:center; scroll-snap-align:center; color:var(--muted); font:800 19px/1 var(--display); letter-spacing:.04em; cursor:pointer; }
+  .wheel-item.on { color:var(--lime); font-size:27px; font-weight:900; }
+  .wheel-pad { height:44px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border-radius:999px; font-size:12px; font-weight:900; letter-spacing:.06em; }
+  .chip-cadet { color:#0b0e05; background:var(--lime); }
+  .chip-senior { color:var(--text); background:#2b3327; border:1px solid var(--line); }
+  .chip-warn { color:#ffb0ae; background:rgba(255,107,105,.1); border:1px solid rgba(255,107,105,.4); font-weight:700; letter-spacing:0; }
+  .colors { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
+  .color { position:relative; padding:6px 4px 5px; border:2px solid var(--line); border-radius:12px; background:var(--surface-2);
+    display:grid; justify-items:center; gap:2px; cursor:pointer; }
+  .color img { width:100%; max-width:56px; aspect-ratio:1; object-fit:contain; }
+  .color b { font-size:10px; font-weight:800; color:var(--muted); }
+  .color.selected { border-color:var(--lime); background:rgba(216,255,53,.1); }
+  .color.selected b { color:var(--text); }
+  .color.taken { opacity:.28; pointer-events:none; }
+  .check { display:grid; grid-template-columns:24px 1fr; gap:10px; align-items:start; padding:12px 14px;
+    border:1px solid var(--line); border-radius:10px; background:var(--surface); font-size:13px; font-weight:600; line-height:1.45; }
+  .check input { width:24px; height:24px; accent-color:var(--lime); margin:0; }
+  .check small { display:block; margin-top:4px; color:var(--muted); font-size:12px; font-weight:500; }
+  button { font:inherit; cursor:pointer; }
+  .primary { min-height:56px; border:0; border-radius:12px; color:#0b0e05; background:var(--lime); font-size:17px; font-weight:900; letter-spacing:.03em; }
+  .primary[disabled] { opacity:.55; cursor:default; }
+  .ghost { min-height:48px; border:1px dashed #3a4335; border-radius:12px; color:var(--text); background:transparent; font-size:15px; font-weight:800; }
+  .remove { min-height:32px; padding:0 10px; border:1px solid var(--line); border-radius:8px; color:var(--muted); background:var(--surface-2); font-size:12px; font-weight:800; }
+  .error { margin:0; padding:12px 14px; border:1px solid rgba(255,107,105,.4); border-radius:10px;
+    color:#ffb0ae; background:rgba(255,107,105,.08); font-size:13px; font-weight:600; }
+  .hidden { display:none !important; }
+  .done { display:grid; gap:14px; justify-items:center; text-align:center; padding:28px 18px;
+    border:1px solid rgba(216,255,53,.4); border-radius:16px; background:linear-gradient(160deg, rgba(216,255,53,.14), transparent 60%), var(--surface); }
+  .done .wheel-img { width:74px; height:74px; background:url("/assets/wheel.png") center/contain no-repeat; animation:spin 2.4s linear infinite; }
+  .done h2 { margin:0; font:italic 900 30px/1 var(--display); text-transform:uppercase; }
+  .code { font:900 40px/1 var(--display); color:var(--lime); letter-spacing:.06em; }
+  .roster { display:grid; gap:8px; width:100%; }
+  .roster div { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); text-align:left; }
+  .roster img { width:34px; height:34px; object-fit:contain; }
+  .roster b { flex:1; font-size:14px; }
+  footer { color:var(--muted); font-size:11px; line-height:1.5; text-align:center; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion:reduce) { .done .wheel-img { animation:none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" role="img" aria-label="MegaKart"></div>
+    <div>
+      <span class="kicker">MegaKart Fès</span>
+      <h1>Inscription pilote</h1>
+    </div>
+  </header>
+
+  <form id="form" novalidate>
+    <p class="lead">Inscrivez-vous, ajoutez vos amis, choisissez l'âge et le pilote de chacun. Vos noms s'afficheront sur l'écran géant pendant la course.</p>
+    <p class="error hidden" id="error" role="alert"></p>
+
+    <fieldset id="main-block">
+      <legend>Vous</legend>
+      <label><span>Prénom et nom</span>
+        <input id="name" type="text" autocomplete="name" enterkeyhint="next" maxlength="60" required>
+      </label>
+      <label><span>Téléphone</span>
+        <input id="phone" type="tel" autocomplete="tel" inputmode="tel" enterkeyhint="next" maxlength="24" required>
+      </label>
+      <label><span>Email <em>(facultatif)</em></span>
+        <input id="email" type="email" autocomplete="email" inputmode="email" enterkeyhint="done" maxlength="80">
+      </label>
+      <div class="field"><span>Âge</span><div class="wheel" data-wheel="age-main"></div></div>
+      <div class="field" data-height="main"><span>Taille <em>(junior : 130 cm · GT : 160 cm)</em></span><div class="wheel" data-wheel="height-main"></div></div>
+      <div class="chips" data-chips="main"></div>
+      <div>
+        <span style="display:block;margin-bottom:8px;font-size:13px;font-weight:700">Votre pilote</span>
+        <div class="colors" data-colors="main" role="radiogroup" aria-label="Couleur du pilote"></div>
+      </div>
+    </fieldset>
+
+    <div id="players"></div>
+    <button type="button" class="ghost" id="add">+ Ajouter un pilote</button>
+
+    <label class="check" for="waiver">
+      <input id="waiver" type="checkbox" required>
+      <span>J'accepte le règlement de piste et les consignes de sécurité pour tout le groupe.
+        <small>Les mineurs doivent être accompagnés d'un parent ou tuteur à l'accueil.</small></span>
+    </label>
+    <label class="check" for="offers">
+      <input id="offers" type="checkbox">
+      <span>Je souhaite recevoir les offres MegaKart.
+        <small>Facultatif. Vous pouvez demander leur arrêt à tout moment.</small></span>
+    </label>
+
+    <button type="submit" class="primary" id="submit">Valider l'inscription</button>
+  </form>
+
+  <div class="done hidden" id="done">
+    <div class="wheel-img" aria-hidden="true"></div>
+    <h2>C'est enregistré&nbsp;!</h2>
+    <p class="lead">Présentez ce code à l'accueil pour recevoir vos karts.</p>
+    <div class="code" id="code">—</div>
+    <div class="roster" id="doneRoster"></div>
+  </div>
+
+  <footer>Vos informations restent sur l'ordinateur de MegaKart Fès, pour la gestion des sessions.</footer>
+</div>
+<script>
+  var COLORS = ${JSON.stringify(DRIVER_COLORS)};
+  var MIN_AGE = 8, JUNIOR_MAX_AGE = 14;
+  var MIN_HEIGHT = { JUNIOR: 130, GT: 160 };
+  var AGES = [];
+  for (var a = MIN_AGE; a <= 80; a++) AGES.push(a);
+  var HEIGHTS = [];
+  for (var h = 110; h <= 210; h++) HEIGHTS.push(h);
+
+  var main = { age: null, height: null, color: 1 };
+  var players = []; // friends added to the group
+  var nextId = 1;
+
+  function categoryFor(age) { return age == null ? null : age <= JUNIOR_MAX_AGE ? "JUNIOR" : "GT"; }
+
+  // Snapping wheel: tall enough to show three values, the middle one is the selection.
+  function buildWheel(host, values, selected, format, onPick) {
+    host.innerHTML = '<div class="wheel-line"></div><div class="wheel-scroll" tabindex="0" role="listbox"><div class="wheel-pad"></div><div class="wheel-items"></div><div class="wheel-pad"></div></div>';
+    var scroll = host.querySelector(".wheel-scroll");
+    var items = host.querySelector(".wheel-items");
+    values.forEach(function (value) {
+      var item = document.createElement("div");
+      item.className = "wheel-item";
+      item.textContent = format(value);
+      item.setAttribute("role", "option");
+      item.dataset.value = value;
+      item.addEventListener("click", function () { scroll.scrollTo({ top: values.indexOf(value) * 44, behavior: "smooth" }); });
+      items.appendChild(item);
+    });
+    function mark(index) {
+      var nodes = items.children;
+      for (var i = 0; i < nodes.length; i++) nodes[i].classList.toggle("on", i === index);
+      nodes[index] && nodes[index].setAttribute("aria-selected", "true");
+    }
+    // Nothing counts as chosen until the person scrolls or taps: parking the wheel on a value
+    // must not silently pick it, or a group of adults all end up registered at the first age.
+    var armed = selected != null;
+    ["pointerdown", "touchstart", "keydown", "wheel"].forEach(function (type) {
+      scroll.addEventListener(type, function () { armed = true; }, { passive: true });
+    });
+    var timer = null;
+    scroll.addEventListener("scroll", function () {
+      var index = Math.max(0, Math.min(values.length - 1, Math.round(scroll.scrollTop / 44)));
+      if (!armed) return;
+      mark(index);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(function () { onPick(values[index]); }, 120);
+    });
+    // Unchosen wheels park on a sensible middle value (18 ans, 160 cm) rather than their first one.
+    var parked = values.indexOf(18) >= 0 ? 18 : values[Math.floor(values.length / 2)];
+    var start = Math.max(0, values.indexOf(selected == null ? parked : selected));
+    scroll.scrollTop = start * 44;
+    if (selected != null) mark(start);
+  }
+
+  function renderChips(host, age, height) {
+    host.innerHTML = "";
+    var category = categoryFor(age);
+    if (!category) return;
+    var chip = document.createElement("span");
+    chip.className = "chip " + (category === "JUNIOR" ? "chip-cadet" : "chip-senior");
+    chip.textContent = category === "JUNIOR" ? "JUNIOR · kart junior" : "GT · kart adulte";
+    host.appendChild(chip);
+    if (height != null && height < MIN_HEIGHT[category]) {
+      var warn = document.createElement("span");
+      warn.className = "chip chip-warn";
+      warn.textContent = "Moins de " + MIN_HEIGHT[category] + " cm : vérification à l'accueil";
+      host.appendChild(warn);
+    }
+  }
+
+  function syncMain() {
+    renderChips(document.querySelector('[data-chips="main"]'), main.age, main.height);
+  }
+
+  function takenColors(exceptKey) {
+    var used = [];
+    if (exceptKey !== "main") used.push(main.color);
+    players.forEach(function (p) { if (p.key !== exceptKey) used.push(p.color); });
+    return used;
+  }
+  function freeColor() {
+    var used = takenColors(null);
+    for (var i = 0; i < COLORS.length; i++) if (used.indexOf(COLORS[i].id) < 0) return COLORS[i].id;
+    return COLORS[0].id;
+  }
+  function renderColors(container, key, selected) {
+    var taken = takenColors(key);
+    container.innerHTML = "";
+    COLORS.forEach(function (color) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "color" + (color.id === selected ? " selected" : "") + (taken.indexOf(color.id) >= 0 ? " taken" : "");
+      button.setAttribute("role", "radio");
+      button.setAttribute("aria-checked", color.id === selected ? "true" : "false");
+      button.setAttribute("aria-label", "Pilote " + color.label);
+      button.innerHTML = '<img src="/assets/driver-' + color.id + '.png" alt=""><b>' + color.label + "</b>";
+      button.addEventListener("click", function () {
+        if (key === "main") main.color = color.id;
+        else { var p = players.find(function (x) { return x.key === key; }); if (p) p.color = color.id; }
+        renderPlayers();
+        renderColors(document.querySelector('[data-colors="main"]'), "main", main.color);
+      });
+      container.appendChild(button);
+    });
+  }
+
+  function renderPlayers() {
+    var host = document.getElementById("players");
+    host.innerHTML = "";
+    players.forEach(function (player, index) {
+      var block = document.createElement("fieldset");
+      block.innerHTML =
+        '<div class="player-head"><strong>Pilote ' + (index + 2) + '</strong>' +
+        '<button type="button" class="remove">Retirer</button></div>' +
+        '<label><span>Prénom et nom</span><input type="text" maxlength="60" data-field="name" value="' + player.name.replace(/"/g, "&quot;") + '"></label>' +
+        '<label><span>Téléphone</span><input type="tel" inputmode="tel" maxlength="24" data-field="phone" value="' + player.phone.replace(/"/g, "&quot;") + '"></label>' +
+        '<div class="field"><span>Âge</span><div class="wheel" data-w="age"></div></div>' +
+        '<div class="field" data-h><span>Taille <em>(junior : 130 cm · GT : 160 cm)</em></span><div class="wheel" data-w="height"></div></div>' +
+        '<div class="chips"></div>' +
+        '<label><span>Email <em>(facultatif)</em></span><input type="email" maxlength="80" inputmode="email" data-field="email" value="' + player.email.replace(/"/g, "&quot;") + '"></label>' +
+        '<div><span style="display:block;margin-bottom:8px;font-size:13px;font-weight:700">Son pilote</span><div class="colors" role="radiogroup"></div></div>';
+
+      block.querySelectorAll("input[data-field]").forEach(function (input) {
+        input.addEventListener("input", function () { player[input.dataset.field] = input.value; });
+      });
+      block.querySelector(".remove").addEventListener("click", function () {
+        players = players.filter(function (x) { return x.key !== player.key; });
+        renderPlayers();
+        renderColors(document.querySelector('[data-colors="main"]'), "main", main.color);
+      });
+
+      // In the page before the wheels are built: setting scrollTop on a detached element does
+      // nothing, which would leave every new pilot's wheel parked on its first value.
+      host.appendChild(block);
+
+      var chips = block.querySelector(".chips");
+      function syncPlayer() { renderChips(chips, player.age, player.height); }
+      buildWheel(block.querySelector('[data-w="age"]'), AGES, player.age, function (v) { return v + " ans"; }, function (v) {
+        player.age = v;
+        syncPlayer();
+      });
+      buildWheel(block.querySelector('[data-w="height"]'), HEIGHTS, player.height, function (v) { return v + " cm"; }, function (v) {
+        player.height = v;
+        syncPlayer();
+      });
+      syncPlayer();
+      renderColors(block.querySelector(".colors"), player.key, player.color);
+    });
+    var add = document.getElementById("add");
+    add.textContent = players.length >= 11 ? "Maximum atteint (12 pilotes)" : "+ Ajouter un pilote";
+    add.disabled = players.length >= 11;
+  }
+
+  buildWheel(document.querySelector('[data-wheel="age-main"]'), AGES, null, function (v) { return v + " ans"; }, function (v) { main.age = v; syncMain(); });
+  buildWheel(document.querySelector('[data-wheel="height-main"]'), HEIGHTS, null, function (v) { return v + " cm"; }, function (v) { main.height = v; syncMain(); });
+  renderColors(document.querySelector('[data-colors="main"]'), "main", main.color);
+
+  document.getElementById("add").addEventListener("click", function () {
+    players.push({ key: "p" + nextId++, name: "", phone: "", age: null, height: null, email: "", color: freeColor() });
+    renderPlayers();
+    renderColors(document.querySelector('[data-colors="main"]'), "main", main.color);
+    // Bring the new pilot's fields up, not the bottom of the page: the person adding a friend
+    // should land straight on the name box with the keyboard ready.
+    var block = document.querySelector("#players fieldset:last-of-type");
+    if (!block) return;
+    var input = block.querySelector('input[data-field="name"]');
+    if (input) input.focus({ preventScroll: true });
+    var top = window.pageYOffset + block.getBoundingClientRect().top - 12;
+    window.scrollTo({ top: top, behavior: "smooth" });
+  });
+
+  var form = document.getElementById("form");
+  var errorBox = document.getElementById("error");
+  var submit = document.getElementById("submit");
+  function fail(message) {
+    errorBox.textContent = message;
+    errorBox.classList.remove("hidden");
+    submit.disabled = false;
+    submit.textContent = "Valider l'inscription";
+    errorBox.scrollIntoView({ block: "center" });
+  }
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    errorBox.classList.add("hidden");
+    var payload = {
+      name: document.getElementById("name").value.trim(),
+      phone: document.getElementById("phone").value.trim(),
+      email: document.getElementById("email").value.trim(),
+      age: main.age,
+      height: main.height,
+      color: main.color,
+      waiver: document.getElementById("waiver").checked,
+      offers: document.getElementById("offers").checked,
+      team: players.map(function (p) { return { name: p.name.trim(), phone: p.phone.trim(), age: p.age, height: p.height, email: p.email.trim(), color: p.color }; })
+    };
+    if (payload.name.length < 2) return fail("Indiquez votre prénom et votre nom.");
+    if (payload.phone.replace(/\\D/g, "").length < 6) return fail("Indiquez un numéro de téléphone valide.");
+    if (payload.email && payload.email.indexOf("@") < 1) return fail("L'email n'est pas valide (ou laissez-le vide).");
+    if (payload.age == null) return fail("Faites défiler la roue pour choisir votre âge.");
+    if (payload.height == null) return fail("Faites défiler la roue pour choisir votre taille.");
+    for (var i = 0; i < payload.team.length; i++) {
+      var mate = payload.team[i];
+      if (mate.name.length < 2) return fail("Indiquez le nom du pilote " + (i + 2) + ".");
+      if (mate.phone.replace(/\\D/g, "").length < 6) return fail("Indiquez le téléphone du pilote " + (i + 2) + ".");
+      if (mate.age == null) return fail("Choisissez l'âge du pilote " + (i + 2) + ".");
+      if (mate.height == null) return fail("Choisissez la taille du pilote " + (i + 2) + ".");
+      if (mate.email && mate.email.indexOf("@") < 1) return fail("L'email du pilote " + (i + 2) + " n'est pas valide.");
+    }
+    if (!payload.waiver) return fail("Vous devez accepter le règlement de piste.");
+    submit.disabled = true;
+    submit.textContent = "Envoi…";
+    fetch("/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+      .then(function (res) { return res.ok ? res.json() : res.text().then(function (t) { throw new Error(t || res.status); }); })
+      .then(function (data) {
+        document.getElementById("code").textContent = data.code;
+        var roster = document.getElementById("doneRoster");
+        roster.innerHTML = "";
+        (data.players || []).forEach(function (p) {
+          var row = document.createElement("div");
+          row.innerHTML = '<img src="/assets/driver-' + p.color + '.png" alt=""><b>' + p.name + '</b>' +
+            '<span class="chip ' + (p.category === "JUNIOR" ? "chip-cadet" : "chip-senior") + '">' + p.category + "</span>";
+          roster.appendChild(row);
+        });
+        form.classList.add("hidden");
+        document.getElementById("done").classList.remove("hidden");
+        window.scrollTo(0, 0);
+      })
+      .catch(function (e) { fail("Envoi impossible : " + e.message + ". Vérifiez le Wi-Fi MegaKart et réessayez."); });
+  });
+</script>
+</body>
+</html>`;

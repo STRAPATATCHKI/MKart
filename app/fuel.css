@@ -1,0 +1,111 @@
+/* Fuel page: barrel gauge, per-kart estimates and the daily log. */
+.fuel-page {
+  --fuel-top: #ffd34d;
+  --fuel-bottom: #e08a1e;
+  --fuel-glow: rgba(255, 190, 60, .35);
+}
+.fuel-page.is-low, .fuel-page .fb.is-low {
+  --fuel-top: #ff8a6b;
+  --fuel-bottom: #d43b2f;
+  --fuel-glow: rgba(255, 96, 76, .35);
+}
+.fuel-heading { align-items: flex-end; }
+
+.fuel-alert { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 12px 15px; border: 1px solid rgba(255,107,105,.38); border-radius: 10px;
+  color: #ffb9b7; background: rgba(255,107,105,.09); font-size: 12px; }
+.fuel-alert strong { color: #fff; }
+
+/* KPI row */
+.fuel-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.fuel-kpis article { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 12px;
+  background: linear-gradient(160deg, #10150f, #0a0d09); }
+.fuel-kpis article > svg { color: var(--lime); flex: 0 0 auto; margin-top: 2px; }
+.fuel-kpis article.is-low > svg { color: var(--danger); }
+.fuel-kpis span { min-width: 0; display: grid; gap: 3px; }
+.fuel-kpis small { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .16em; }
+.fuel-kpis strong { display: flex; align-items: baseline; gap: 3px; font-size: 27px; line-height: 1.05; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.fuel-kpis strong em { color: var(--muted); font-size: 13px; font-style: normal; font-weight: 700; }
+.fuel-kpis b { color: #9aa294; font-size: 10px; font-weight: 600; }
+
+/* Barrel + estimates */
+.fuel-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 14px; margin-top: 14px; align-items: start; }
+.fuel-barrel-body { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 20px; align-items: center; padding: 6px 2px 4px; }
+.fb { width: 100%; height: auto; filter: drop-shadow(0 18px 30px rgba(0,0,0,.55)); }
+.fb-liquid { transition: transform 1.1s cubic-bezier(.22,1,.36,1); }
+.fb-wave { animation: fb-drift 3.4s linear infinite; }
+.fb-wave--back { animation-duration: 5.1s; animation-direction: reverse; }
+.fb-bubble { fill: rgba(255,255,255,.5); animation: fb-bubble 5s ease-in infinite; }
+.fb-tick line { stroke: rgba(216,255,53,.35); stroke-width: 1.5; }
+.fb-tick text { fill: #7f877b; font-size: 9px; font-weight: 700; font-family: Inter, sans-serif; }
+@keyframes fb-drift { to { transform: translateX(-200px); } }
+@keyframes fb-bubble {
+  0% { transform: translateY(0) scale(.7); opacity: 0; }
+  12% { opacity: .75; }
+  100% { transform: translateY(-190px) scale(1.1); opacity: 0; }
+}
+
+.fuel-barrel-side { display: grid; gap: 14px; min-width: 0; }
+.fuel-field { display: grid; gap: 6px; }
+.fuel-field > span { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.fuel-input-row { display: flex; gap: 8px; }
+.fuel-input-row input { flex: 1; min-width: 0; }
+.fuel-input-row .primary-button, .fuel-input-row .secondary-button { height: 44px; flex: 0 0 auto; }
+.fuel-readout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 2px 0 0; padding: 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: #0c110c; }
+.fuel-readout div { display: grid; gap: 3px; }
+.fuel-readout dt { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.fuel-readout dd { margin: 0; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* Per-kart estimates */
+.fuel-karts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.fuel-kart { position: relative; overflow: hidden; display: grid; gap: 5px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: #0d120d; }
+.fuel-kart::after { content: ""; position: absolute; inset: auto -30% -70% auto; width: 160px; height: 160px; border-radius: 50%; background: var(--fuel-glow); filter: blur(28px); pointer-events: none; }
+.fuel-kart-tag { align-self: start; padding: 4px 9px; border-radius: 999px; font-size: 9px; font-weight: 900; letter-spacing: .14em; }
+.fuel-kart--junior .fuel-kart-tag { color: #10140c; background: var(--lime); }
+.fuel-kart--gt .fuel-kart-tag { color: #f4f6ed; background: #2c3527; border: 1px solid var(--line); }
+.fuel-kart strong { display: flex; align-items: baseline; gap: 4px; font-size: 30px; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.fuel-kart strong em { color: var(--muted); font-size: 13px; font-style: normal; font-weight: 700; }
+.fuel-kart small { color: #9aa294; font-size: 11px; }
+.fuel-kart-bar { height: 6px; margin-top: 6px; border-radius: 99px; background: #1b2118; overflow: hidden; }
+.fuel-kart-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--fuel-bottom), var(--fuel-top)); transition: width .8s cubic-bezier(.22,1,.36,1); }
+
+.fuel-session-note { display: flex; align-items: flex-start; gap: 9px; margin-top: 12px; padding: 12px 14px; border: 1px dashed #2f3a2b; border-radius: 10px; color: #b4bbae; font-size: 12px; line-height: 1.5; }
+.fuel-session-note svg { color: var(--lime); flex: 0 0 auto; margin-top: 2px; }
+.fuel-session-note strong { color: var(--text); }
+
+/* Daily log */
+.fuel-history { margin-top: 14px; }
+.fuel-history-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .16em; }
+.fuel-history-head small { font-size: 9px; font-weight: 600; letter-spacing: .04em; text-transform: none; }
+.fuel-bars { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); align-items: end; gap: 8px; height: 132px; margin: 0; padding: 0; list-style: none; }
+.fuel-bars li { display: grid; grid-template-rows: 1fr auto auto; align-items: end; justify-items: center; gap: 5px; height: 100%; }
+.fuel-bars i { width: 100%; max-width: 34px; border-radius: 6px 6px 3px 3px; background: linear-gradient(180deg, var(--fuel-top), var(--fuel-bottom));
+  animation: fuel-bar-in .6s cubic-bezier(.22,1,.36,1) both; }
+.fuel-bars i.is-empty { background: #232b20; }
+.fuel-bars li:nth-child(2) i { animation-delay: .05s; }
+.fuel-bars li:nth-child(3) i { animation-delay: .1s; }
+.fuel-bars li:nth-child(4) i { animation-delay: .15s; }
+.fuel-bars li:nth-child(5) i { animation-delay: .2s; }
+.fuel-bars li:nth-child(6) i { animation-delay: .25s; }
+.fuel-bars li:nth-child(7) i { animation-delay: .3s; }
+.fuel-bars b { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.fuel-bars small { color: var(--muted); font-size: 9px; white-space: nowrap; }
+@keyframes fuel-bar-in { from { transform: scaleY(.04); transform-origin: bottom; opacity: .3; } }
+
+/* Settings */
+.fuel-settings { margin-top: 14px; }
+.fuel-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.fuel-settings-note { display: block; margin-top: 12px; color: var(--muted); font-size: 10px; }
+
+@media (max-width: 1180px) {
+  .fuel-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fuel-main { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .fuel-kpis { grid-template-columns: 1fr; }
+  .fuel-barrel-body { grid-template-columns: 1fr; justify-items: center; }
+  .fuel-barrel-body .fb { max-width: 190px; }
+  .fuel-karts { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fb-liquid, .fb-wave, .fb-bubble, .fuel-bars i, .fuel-kart-bar i { animation: none !important; transition: none !important; }
+}

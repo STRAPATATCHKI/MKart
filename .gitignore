@@ -1,0 +1,88 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  MEGAKART — .gitignore
+#
+#  Read the PERSONAL DATA section before force-adding anything. Once a file is
+#  pushed it stays in the history forever, even if deleted in a later commit.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── PERSONAL DATA — never commit ─────────────────────────────────────────────
+# These hold real customers: names, phone numbers, e-mails, birth dates, ages
+# and heights. Some belong to CHILDREN (the junior category starts at 130 cm).
+# `/out/` alone does NOT cover them: a leading slash matches the repo root only,
+# and the bridge writes to tools/apex-bridge/out/.
+tools/apex-bridge/out/
+tools/reservations/*.log
+tools/reservations/typist-names.json
+tools/gokarts-typist/*.json
+**/signups.json
+**/reservations.json
+**/reservations.json.tmp
+**/history.json
+**/chrono.json
+**/active-session.json
+**/capture*.log
+**/capture*.txt
+snapshots/
+
+# Venue-specific equipment and roster data. Not secret, but it is THIS track's
+# wiring and it changes every session — the .example files are committed instead.
+tools/apex-bridge/roster.json
+tools/apex-bridge/karts.json
+
+# ── SECRETS ──────────────────────────────────────────────────────────────────
+# Every real value lives in Render's environment, never in the repo.
+# .env.example is the documented template and IS committed (see the ! rule).
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+*_rsa
+serviceAccount*.json
+firebase-adminsdk*.json
+
+# ── dependencies ─────────────────────────────────────────────────────────────
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+/.pnpm-store/
+
+# ── build output ─────────────────────────────────────────────────────────────
+/.next/
+/dist/
+/out/
+/outputs/
+/work/
+/coverage
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# ── local tooling state ──────────────────────────────────────────────────────
+/.wrangler/
+/.sites-runtime/
+/.firebase/
+/tmp/
+/x
+
+# ── logs ─────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── editor / OS ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# ── deploy ───────────────────────────────────────────────────────────────────
+.vercel

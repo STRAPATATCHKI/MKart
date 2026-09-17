@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MegaKart Apex Live</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0f14; --card:#131a23; --line:#243040; --fg:#e8eef5; --muted:#8aa0b6; --accent:#38e07b; --warn:#f5a524; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:14px 20px; border-bottom:1px solid var(--line); }
+  h1 { font-size:16px; margin:0; letter-spacing:.02em; }
+  .pill { padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+  .on { background:rgba(56,224,123,.15); color:var(--accent); } .off { background:rgba(245,165,36,.15); color:var(--warn); }
+  main { padding:20px; max-width:1000px; margin:0 auto; }
+  .status { display:flex; gap:20px; flex-wrap:wrap; margin-bottom:18px; color:var(--muted); }
+  .status b { color:var(--fg); font-variant-numeric:tabular-nums; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  th,td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  td.pos { font-weight:700; width:48px; } td.kart { color:var(--accent); font-weight:600; }
+  tr:last-child td { border-bottom:0; }
+  .empty { padding:40px; text-align:center; color:var(--muted); }
+  .idle { border:1px dashed var(--line); border-radius:10px; }
+  footer { padding:12px 20px; color:var(--muted); font-size:12px; border-top:1px solid var(--line); }
+  code { color:var(--muted); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>MegaKart · Apex Live</h1>
+    <span id="conn" class="pill off">connecting…</span>
+    <span id="sess" class="pill off">no session</span>
+  </header>
+  <main>
+    <div class="status">
+      <span>feed <b id="src">—</b></span>
+      <span>sync <b id="tick">—</b></span>
+      <span>updates <b id="ver">0</b></span>
+      <span>records <b id="rec">0</b></span>
+    </div>
+    <div id="board"></div>
+  </main>
+  <footer>Read-only tap of the GoKarts live feed. This page changes nothing on Apex. <code id="raw"></code></footer>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  function fmtMs(ms){ if(ms==null) return "—"; const s=ms/1000; const m=Math.floor(s/60); const r=(s-m*60); return (m>0? m+":"+r.toFixed(3).padStart(6,"0") : r.toFixed(3)); }
+  function render(st){
+    $("conn").className = "pill " + (st.connected?"on":"off");
+    $("conn").textContent = st.connected ? "feed connected" : "feed down";
+    const active = st.session && st.session.active;
+    $("sess").className = "pill " + (active?"on":"off");
+    $("sess").textContent = active ? ("session: type "+(st.session.type??"?")) : "no active session";
+    $("src").textContent = st.source || "—";
+    $("tick").textContent = st.lastSyncTick || "—";
+    $("ver").textContent = st.version ?? 0;
+    $("rec").textContent = Object.keys(st.records||{}).length;
+    const drivers = st.drivers || [];
+    if(!drivers.length){
+      $("board").innerHTML = '<div class="empty idle">'+(active
+        ? 'Session active — waiting for driver/lap records…'
+        : 'No session running. Start a session on the timing system and drivers will appear here live.')+'</div>';
+      return;
+    }
+    let rows = drivers.map(d => `<tr>
+      <td class="pos">${d.position ?? "—"}</td>
+      <td class="kart">${d.kart ?? "—"}</td>
+      <td>${d.name ?? "—"}</td>
+      <td>${d.laps ?? "—"}</td>
+      <td>${fmtMs(d.lastLapMs)}</td>
+      <td>${fmtMs(d.bestLapMs)}</td>
+      <td>${d.gap ?? "—"}</td>
+    </tr>`).join("");
+    $("board").innerHTML = `<table><thead><tr>
+      <th>Pos</th><th>Kart</th><th>Driver</th><th>Laps</th><th>Last</th><th>Best</th><th>Gap</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  function connect(){
+    const es = new EventSource("/stream");
+    es.onmessage = (e) => { try { render(JSON.parse(e.data)); } catch {} };
+    es.onerror = () => { $("conn").className="pill off"; $("conn").textContent="reconnecting…"; };
+  }
+  connect();
+</script>
+</body>
+</html>
