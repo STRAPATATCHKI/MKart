@@ -1,4 +1,7 @@
-$ProjectPath = "C:\Users\youss\MegakartDash"
+# Resolve the repo root from this script's own location, so a clone works anywhere.
+# Override with MEGAKART_PATH if the script is run from outside the checkout.
+$ProjectPath = if ($env:MEGAKART_PATH) { $env:MEGAKART_PATH }
+               else { Split-Path -Parent $PSScriptRoot }
 
 $Host.UI.RawUI.WindowTitle = "MEGAKART - APEX DEVELOPMENT COMMAND CENTER"
 
