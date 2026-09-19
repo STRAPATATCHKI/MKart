@@ -157,6 +157,12 @@ export const SIGNUP_PAGE = `<!doctype html>
     <div class="roster" id="doneRoster"></div>
   </div>
 
+  <div class="done hidden" id="gate">
+    <div class="wheel-img" aria-hidden="true"></div>
+    <h2 id="gateTitle">Lien expiré</h2>
+    <p class="lead" id="gateText">Scannez le QR code affiché à l'accueil pour obtenir un nouveau lien.</p>
+  </div>
+
   <footer>Vos informations restent sur l'ordinateur de MegaKart Fès, pour la gestion des sessions.</footer>
 </div>
 <script>
@@ -337,6 +343,10 @@ export const SIGNUP_PAGE = `<!doctype html>
   var SIGNUP_MODE = "local";
   var CLOUD_DB_URL = "";
 
+  // One scan, one inscription. The QR code carries a token the database refuses once it has been
+  // used or once its few minutes are up, so a screenshot of the link registers nobody tomorrow.
+  var INVITE_TOKEN = (location.search.match(/[?&]t=([A-Za-z0-9_-]{8,64})/) || [])[1] || "";
+
   function submitSignup(payload) {
     if (SIGNUP_MODE !== "cloud") {
       return fetch("/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
@@ -358,9 +368,16 @@ export const SIGNUP_PAGE = `<!doctype html>
       status: "new", createdAt: Date.now(), players: players,
     };
     if (payload.email) record.email = payload.email;
+    if (INVITE_TOKEN) record.token = INVITE_TOKEN;
     return fetch(CLOUD_DB_URL + "/signups/" + id + ".json", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) })
       .then(function (res) {
         if (!res.ok) return res.text().then(function (t) { throw new Error(t || res.status); });
+        // Burn the invite: the next client needs the fresh QR code from the counter.
+        fetch(CLOUD_DB_URL + "/invites/" + INVITE_TOKEN + ".json", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ used: true, usedAt: Date.now(), signupId: id }),
+        }).catch(function () {});
         return { ok: true, id: id, code: id.slice(-4), players: players };
       });
   }
@@ -420,8 +437,41 @@ export const SIGNUP_PAGE = `<!doctype html>
         document.getElementById("done").classList.remove("hidden");
         window.scrollTo(0, 0);
       })
-      .catch(function (e) { fail("Envoi impossible : " + e.message + ". Vérifiez le Wi-Fi MegaKart et réessayez."); });
+      .catch(function (e) {
+        if (SIGNUP_MODE === "cloud" && /Permission denied|401|403/.test(e.message)) {
+          lockOut("Lien expiré", "Ce lien d'inscription vient d'expirer ou a déjà servi. Scannez le QR code affiché à l'accueil.");
+          return;
+        }
+        fail("Envoi impossible : " + e.message + (SIGNUP_MODE === "cloud" ? ". Vérifiez votre connexion et réessayez." : ". Vérifiez le Wi-Fi MegaKart et réessayez."));
+      });
   });
+
+  function lockOut(title, text) {
+    document.getElementById("gateTitle").textContent = title;
+    document.getElementById("gateText").textContent = text;
+    form.classList.add("hidden");
+    document.getElementById("done").classList.add("hidden");
+    document.getElementById("gate").classList.remove("hidden");
+    window.scrollTo(0, 0);
+  }
+
+  // Hosted, the form is worth nothing without a live invite; on the venue Wi-Fi the bridge is the gate.
+  if (SIGNUP_MODE === "cloud") {
+    // Hosted, the form writes to MegaKart's database rather than to the PC at the track: say so.
+    document.querySelector("footer").textContent = "Vos informations servent uniquement à la gestion de vos sessions chez MegaKart Fès.";
+    if (!INVITE_TOKEN) {
+      lockOut("Scannez le QR code", "L'inscription se fait en scannant le QR code affiché à l'accueil de MegaKart Fès.");
+    } else {
+      fetch(CLOUD_DB_URL + "/invites/" + INVITE_TOKEN + ".json")
+        .then(function (res) { return res.json(); })
+        .then(function (invite) {
+          if (!invite) lockOut("Lien inconnu", "Ce lien d'inscription n'existe pas. Scannez le QR code affiché à l'accueil.");
+          else if (invite.used) lockOut("Lien déjà utilisé", "Ce lien a servi à une inscription. Scannez le QR code affiché à l'accueil pour en obtenir un nouveau.");
+          else if (invite.expiresAt <= Date.now()) lockOut("Lien expiré", "Ce lien n'est plus valable. Scannez le QR code affiché à l'accueil pour en obtenir un nouveau.");
+        })
+        .catch(function () { /* a network hiccup is not a refusal: let them fill it in, the database decides */ });
+    }
+  }
 </script>
 </body>
 </html>`;

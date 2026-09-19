@@ -64,6 +64,7 @@ async function rtdb(method, at, data) {
 export const cloudGet = (at) => rtdb("GET", at);
 export const cloudPut = (at, data) => rtdb("PUT", at, data);
 export const cloudPatch = (at, data) => rtdb("PATCH", at, data);
+export const cloudDelete = (at) => rtdb("DELETE", at);
 
 /** A fresh single-use invite: the QR at the counter points at it, and it dies on use or on timeout. */
 export async function mintInvite({ ttlMinutes = 15, label = "" } = {}) {

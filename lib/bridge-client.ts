@@ -148,3 +148,19 @@ export async function pushActiveSession(payload: ActiveSessionPayload): Promise<
   if (res.status === 404 || res.status === 405) throw new BridgeError("outdated", OUTDATED_MESSAGE);
   throw new BridgeError("offline", `Pont de chronométrage : erreur ${res.status}.`);
 }
+
+/** The temporary inscription link behind the counter's QR: single use, a few minutes, then dead. */
+export type Invite = { token: string; url: string; expiresAt: number; ttlMinutes: number };
+
+export async function fetchInvite(fresh = false): Promise<Invite | string> {
+  let res: Response;
+  try {
+    res = await fetch(`${BRIDGE_URL}/invite`, { method: fresh ? "POST" : "GET", cache: "no-store" });
+  } catch {
+    return "Pont hors ligne : démarrez bridge.mjs sur ce PC.";
+  }
+  if (res.status === 404) return "Pont à mettre à jour : redémarrez bridge.mjs pour activer le lien d’inscription.";
+  const body = (await res.json().catch(() => null)) as (Invite & { ok?: boolean; error?: string }) | null;
+  if (!res.ok || !body || body.ok === false) return body?.error || `Lien indisponible (erreur ${res.status}).`;
+  return body;
+}

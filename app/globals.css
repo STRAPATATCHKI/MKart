@@ -434,6 +434,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--lime); outl
 .signup-qr-card small { overflow-wrap: anywhere; color: var(--lime); font-size: 10px; font-weight: 700; }
 .signup-qr-card p { margin: 2px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .signup-qr-card .secondary-button { height: 32px; }
+/* The one-shot inscription link: the countdown tells the staff whether the QR is still worth scanning. */
+.invite-countdown { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; background: rgba(216, 255, 53, .12); color: var(--lime); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.invite-countdown.is-low { background: rgba(255, 138, 76, .16); color: #ffb083; }
+.signup-qr-card .invite-note { color: var(--muted); font-weight: 600; }
+
 .signup-list { display: grid; gap: 8px; min-width: 0; }
 .signup-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 11px 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: #0e1311; }
 .signup-code { display: grid; place-items: center; height: 34px; border-radius: 7px; color: #10140c; background: var(--lime); font-size: 12px; font-weight: 900; letter-spacing: .04em; }

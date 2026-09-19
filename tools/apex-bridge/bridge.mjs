@@ -10,6 +10,9 @@
 //   GET /inscription -> client sign-up form for phones on the venue Wi-Fi
 //   POST /signup  -> a filled sign-up (from those phones); stored in out/signups.json
 //   GET/POST /signups -> read the sign-ups / set an entry's status (this PC only: personal data)
+//   GET/POST /invite -> the temporary single-use link behind the inscription QR (this PC only);
+//                       GET returns the live one (minting a new one once it is used or expired),
+//                       POST forces a fresh one. Needs the Firebase service-account key.
 //   GET  /active-session -> the MegaKart session the dashboard marked active (or null)
 //   POST /active-session -> dashboard pushes that session (from this PC only): its
 //                           transponder → driver/kart roster names the live board and is
@@ -27,6 +30,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DRIVER_COLORS, SIGNUP_PAGE } from "./signup-page.mjs";
+import { cloudConfigured, cloudDelete, cloudGet, mintInvite } from "./cloud.mjs";
 import { createChrono } from "./chrono.mjs";
 import { createKartMap } from "./kart-map.mjs";
 
@@ -158,6 +162,36 @@ function archiveChrono(snap) {
   try { fs.writeFileSync(HISTORY_FILE, JSON.stringify(hist.slice(0, 500))); } catch (e) { console.log("[history] write failed:", e.message); }
   state.lastArchive = { id: entry.id, archivedAt: entry.archivedAt, megakartSessionId: entry.megakart ? entry.megakart.sessionId : null };
   return entry;
+}
+
+// ------------------------------------------------- the temporary inscription link
+// The QR at the counter never points at a permanent address: it carries a token that dies on
+// first use or after a few minutes, so a link photographed today cannot register anyone tomorrow.
+// Minting needs the service-account key, which lives on this PC only.
+const PUBLIC_SITE = (process.env.MEGAKART_PUBLIC_URL || "https://mega-karts.web.app").replace(/\/+$/, "");
+const INVITE_TTL_MIN = Math.max(1, Number(process.env.MEGAKART_INVITE_TTL_MIN) || 15);
+let invite = null;        // { token, url, expiresAt }
+let inviteChecked = 0;    // last time we asked the database whether it had been used
+
+async function currentInvite(force) {
+  const now = Date.now();
+  if (!force && invite && invite.expiresAt > now + 5_000) {
+    // A phone marks the invite used the moment it registers, and the counter's QR must follow.
+    if (now - inviteChecked > 4_000) {
+      inviteChecked = now;
+      const live = await cloudGet(`invites/${invite.token}`).catch(() => null);
+      if (live && live.used) invite = null;
+    }
+    if (invite) return invite;
+  }
+  const spent = invite ? invite.token : null;
+  const fresh = await mintInvite({ ttlMinutes: INVITE_TTL_MIN });
+  // The spent invite has done its job; leaving it behind would only grow the list forever.
+  if (spent) void cloudDelete(`invites/${spent}`).catch(() => {});
+  inviteChecked = Date.now();
+  invite = { token: fresh.token, url: `${PUBLIC_SITE}/inscription.html?t=${fresh.token}`, expiresAt: fresh.expiresAt };
+  console.log(`[invite] nouveau lien d'inscription, valable ${INVITE_TTL_MIN} min`);
+  return invite;
 }
 
 // ------------------------------------------------------------ client sign-ups
@@ -785,6 +819,25 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "max-age=86400", ...cors });
       res.end(data);
     });
+    return;
+  }
+  if (url === "/invite") {
+    // Loopback only: this hands out the key to a sign-up, so it stays between the bridge and the dashboard.
+    if (!isLoopback(req)) { res.writeHead(403, cors); res.end("forbidden"); return; }
+    if (!cloudConfigured()) {
+      res.writeHead(503, { "Content-Type": "application/json", ...cors });
+      res.end(JSON.stringify({ ok: false, error: "Clé de service Firebase absente sur ce PC." }));
+      return;
+    }
+    currentInvite(req.method === "POST")
+      .then((inv) => {
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store", ...cors });
+        res.end(JSON.stringify({ ok: true, ...inv, ttlMinutes: INVITE_TTL_MIN }));
+      })
+      .catch((e) => {
+        res.writeHead(502, { "Content-Type": "application/json", ...cors });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      });
     return;
   }
   if (url === "/signup") {
