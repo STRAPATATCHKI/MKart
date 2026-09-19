@@ -16,8 +16,14 @@ let key = null;
 export function cloudConfigured() {
   if (key) return true;
   try {
-    const raw = JSON.parse(fs.readFileSync(KEY_FILE, "utf8"));
+    // A host has no repository to put a file in, so the key may come through the environment:
+    // FIREBASE_SERVICE_ACCOUNT holds the JSON itself, FIREBASE_KEY_FILE a path to it (Render's
+    // secret files land in /etc/secrets). On the venue PC neither is set and we read ignore.json.
+    const inline = process.env.FIREBASE_SERVICE_ACCOUNT;
+    const raw = JSON.parse(inline || fs.readFileSync(KEY_FILE, "utf8"));
     if (!raw.client_email || !raw.private_key) return false;
+    // An environment variable cannot hold real newlines, so a pasted key arrives with \n in it.
+    raw.private_key = raw.private_key.replace(/\\n/g, "\n");
     key = raw;
     return true;
   } catch {
