@@ -47,7 +47,6 @@
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "^4.20260702.1",
     "@openai/sites-vite-plugin": "^0.2.0",
-    "@rolldown/binding-win32-x64-msvc": "^1.0.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
@@ -67,5 +66,8 @@
     "wrangler": "4.92.0"
   },
   "type": "module",
-  "displayName": "MegaKart Operations Dashboard"
+  "displayName": "MegaKart Operations Dashboard",
+  "optionalDependencies": {
+    "@rolldown/binding-win32-x64-msvc": "^1.0.1"
+  }
 }
