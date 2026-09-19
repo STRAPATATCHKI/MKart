@@ -86,3 +86,10 @@ Thumbs.db
 
 # ── deploy ───────────────────────────────────────────────────────────────────
 .vercel
+
+# Firebase / Google service-account keys — admin credentials, never commit
+ignore.json
+*service-account*.json
+*firebase-adminsdk*.json
+serviceAccountKey.json
+.env.local

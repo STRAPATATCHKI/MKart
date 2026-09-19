@@ -1318,7 +1318,26 @@ function PageTransitionLoader({ visible }: { visible: boolean }) {
   );
 }
 
-type HashView = { kind: "dashboard" } | { kind: "ecran" } | { kind: "souvenir"; token: string } | { kind: "reserver" };
+// Every dashboard page has its own address (/#/sessions, /#/carburant …), so a refresh, a
+// bookmark or the back button lands on the page you were on instead of the overview.
+const HOME_PAGE = "Vue générale";
+const PAGE_SLUGS: Array<[string, string]> = [
+  [HOME_PAGE, "accueil"],
+  ["Course en direct", "course"],
+  ["Liste d’attente", "attente"],
+  ["Sessions", "sessions"],
+  ["Statistiques", "statistiques"],
+  ["Réservations", "reservations"],
+  ["Clients", "clients"],
+  ["Pass & fidélité", "pass"],
+  ["Packs & ventes", "packs"],
+  ["Carburant", "carburant"],
+  ["Rapports", "rapports"],
+];
+const slugForPage = (label: string) => PAGE_SLUGS.find(([page]) => page === label)?.[1] ?? "accueil";
+const pageForSlug = (slug: string) => PAGE_SLUGS.find(([, s]) => s === slug)?.[0] ?? HOME_PAGE;
+
+type HashView = { kind: "dashboard"; page: string } | { kind: "ecran" } | { kind: "souvenir"; token: string } | { kind: "reserver" };
 
 const readHashView = (): HashView => {
   const hash = window.location.hash;
@@ -1327,14 +1346,26 @@ const readHashView = (): HashView => {
   // never mount the dashboard, whose hooks reach the timing bridge on localhost.
   if (hash === "#reserver") return { kind: "reserver" };
   if (hash.startsWith(SOUVENIR_HASH_PREFIX)) return { kind: "souvenir", token: hash.slice(SOUVENIR_HASH_PREFIX.length) };
-  return { kind: "dashboard" };
+  if (hash.startsWith("#/")) return { kind: "dashboard", page: pageForSlug(hash.slice(2)) };
+  return { kind: "dashboard", page: HOME_PAGE };
 };
 
-const MIN_PAGE_TRANSITION_MS = 3000;
+const PAGE_TITLES: Record<string, string> = {
+  ecran: "Écran géant · MegaKart",
+  souvenir: "Souvenir de course · MegaKart",
+  reserver: "Réservation · MegaKart",
+};
+const titleForView = (view: HashView) =>
+  view.kind === "dashboard"
+    ? view.page === HOME_PAGE
+      ? "MegaKart Operations Dashboard"
+      : `${view.page} · MegaKart`
+    : PAGE_TITLES[view.kind];
+
+const MIN_PAGE_TRANSITION_MS = 1000;
 const preparePageData = (label: string) => Promise.resolve(label);
 
 export default function Home() {
-  const [active, setActive] = useState("Vue générale");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -1365,13 +1396,24 @@ export default function Home() {
   // screen may run in another browser with no sessions of its own and must not clear it.
   const bridgeSync = useBridgeSessionSync(hashView?.kind === "dashboard");
 
+  // The open page comes from the URL, not from state: refreshing or sharing the address reopens
+  // the same page, and the browser's back button walks through the pages you visited.
+  const active = hashView?.kind === "dashboard" ? hashView.page : HOME_PAGE;
+
+  useEffect(() => {
+    if (hashView) document.title = titleForView(hashView);
+  }, [hashView]);
+
   const navigateToPage = (label: string) => {
     if (label === active) return;
     const run = ++navigationRun.current;
     const startedAt = window.performance.now();
     navigationTimers.current.forEach((timer) => window.clearTimeout(timer));
     setPageLoading(true);
-    navigationTimers.current = [window.setTimeout(() => { setActive(label); setSearch(""); }, 360)];
+    navigationTimers.current = [window.setTimeout(() => {
+      window.location.hash = `#/${slugForPage(label)}`;
+      setSearch("");
+    }, 360)];
     void preparePageData(label).finally(() => {
       const remaining = Math.max(0, MIN_PAGE_TRANSITION_MS - (window.performance.now() - startedAt));
       const hideTimer = window.setTimeout(() => {
@@ -1389,7 +1431,7 @@ export default function Home() {
       <BigScreen
         onExit={() => {
           window.history.replaceState(null, "", window.location.pathname + window.location.search);
-          setHashView({ kind: "dashboard" });
+          setHashView({ kind: "dashboard", page: HOME_PAGE });
         }}
       />
     );

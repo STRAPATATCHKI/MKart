@@ -1,22 +1,4 @@
-// Client sign-up form, served by the bridge to phones on the venue Wi-Fi (GET /inscription).
-// One person registers the whole group: their own details, then a card per friend. Age is picked
-// on a wheel (no keyboard on a phone), which decides the category — CADET drives the junior karts
-// (8-14 and at least 150 cm), SENIOR the adult ones — and every player picks a pilot colour
-// (the 8 drivers in public/drivers, served at /assets/driver-N.png).
-// Plain HTML/CSS/JS on purpose: served over http from this PC, so it posts straight back to the
-// bridge with no cloud service, no build step and no mixed-content problem.
-export const DRIVER_COLORS = [
-  { id: 1, label: "Violet", hex: "#8b5cf6" },
-  { id: 2, label: "Jaune", hex: "#f5d90a" },
-  { id: 3, label: "Orange", hex: "#f97316" },
-  { id: 4, label: "Vert", hex: "#45c74a" },
-  { id: 5, label: "Noir", hex: "#3a4048" },
-  { id: 6, label: "Bleu", hex: "#2b7de9" },
-  { id: 7, label: "Rouge", hex: "#e23b3b" },
-  { id: 8, label: "Blanc", hex: "#e9eef4" },
-];
-
-export const SIGNUP_PAGE = `<!doctype html>
+<!doctype html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -35,7 +17,7 @@ export const SIGNUP_PAGE = `<!doctype html>
     font-family:Inter,"Segoe UI",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
   .wrap { width:100%; max-width:30rem; margin:0 auto; display:grid; gap:18px; }
   header { display:flex; align-items:center; gap:14px; }
-  .logo { width:104px; height:62px; flex:0 0 auto; background:url("/assets/logo.png") center/contain no-repeat; }
+  .logo { width:104px; height:62px; flex:0 0 auto; background:url("/megakart-loader-logo.png") center/contain no-repeat; }
   .kicker { color:var(--lime); font-size:11px; font-weight:900; letter-spacing:.22em; text-transform:uppercase; }
   h1 { margin:2px 0 0; font:italic 900 34px/1 var(--display); text-transform:uppercase; }
   p.lead { margin:0; color:var(--muted); font-size:14px; line-height:1.5; }
@@ -86,7 +68,7 @@ export const SIGNUP_PAGE = `<!doctype html>
   .hidden { display:none !important; }
   .done { display:grid; gap:14px; justify-items:center; text-align:center; padding:28px 18px;
     border:1px solid rgba(216,255,53,.4); border-radius:16px; background:linear-gradient(160deg, rgba(216,255,53,.14), transparent 60%), var(--surface); }
-  .done .wheel-img { width:74px; height:74px; background:url("/assets/wheel.png") center/contain no-repeat; animation:spin 2.4s linear infinite; }
+  .done .wheel-img { width:74px; height:74px; background:url("/megakart-loader-wheel.png") center/contain no-repeat; animation:spin 2.4s linear infinite; }
   .done h2 { margin:0; font:italic 900 30px/1 var(--display); text-transform:uppercase; }
   .code { font:900 40px/1 var(--display); color:var(--lime); letter-spacing:.06em; }
   .roster { display:grid; gap:8px; width:100%; }
@@ -160,7 +142,7 @@ export const SIGNUP_PAGE = `<!doctype html>
   <footer>Vos informations restent sur l'ordinateur de MegaKart Fès, pour la gestion des sessions.</footer>
 </div>
 <script>
-  var COLORS = ${JSON.stringify(DRIVER_COLORS)};
+  var COLORS = [{"id":1,"label":"Violet","hex":"#8b5cf6"},{"id":2,"label":"Jaune","hex":"#f5d90a"},{"id":3,"label":"Orange","hex":"#f97316"},{"id":4,"label":"Vert","hex":"#45c74a"},{"id":5,"label":"Noir","hex":"#3a4048"},{"id":6,"label":"Bleu","hex":"#2b7de9"},{"id":7,"label":"Rouge","hex":"#e23b3b"},{"id":8,"label":"Blanc","hex":"#e9eef4"}];
   var MIN_AGE = 8, JUNIOR_MAX_AGE = 14;
   var MIN_HEIGHT = { JUNIOR: 130, GT: 160 };
   var AGES = [];
@@ -255,7 +237,7 @@ export const SIGNUP_PAGE = `<!doctype html>
       button.setAttribute("role", "radio");
       button.setAttribute("aria-checked", color.id === selected ? "true" : "false");
       button.setAttribute("aria-label", "Pilote " + color.label);
-      button.innerHTML = '<img src="/assets/driver-' + color.id + '.png" alt=""><b>' + color.label + "</b>";
+      button.innerHTML = '<img src="/drivers/driver-' + color.id + '.png" alt=""><b>' + color.label + "</b>";
       button.addEventListener("click", function () {
         if (key === "main") main.color = color.id;
         else { var p = players.find(function (x) { return x.key === key; }); if (p) p.color = color.id; }
@@ -334,8 +316,8 @@ export const SIGNUP_PAGE = `<!doctype html>
   // The same form runs in two places: served by the bridge on the venue Wi-Fi (local), and
   // hosted online where it writes straight to the Realtime Database. scripts/build-inscription-page.mjs
   // flips these two lines when it generates the hosted copy; nothing else differs.
-  var SIGNUP_MODE = "local";
-  var CLOUD_DB_URL = "";
+  var SIGNUP_MODE = "cloud";
+  var CLOUD_DB_URL = "https://mega-karts-default-rtdb.asia-southeast1.firebasedatabase.app";
 
   function submitSignup(payload) {
     if (SIGNUP_MODE !== "cloud") {
@@ -390,14 +372,14 @@ export const SIGNUP_PAGE = `<!doctype html>
       team: players.map(function (p) { return { name: p.name.trim(), phone: p.phone.trim(), age: p.age, height: p.height, email: p.email.trim(), color: p.color }; })
     };
     if (payload.name.length < 2) return fail("Indiquez votre prénom et votre nom.");
-    if (payload.phone.replace(/\\D/g, "").length < 6) return fail("Indiquez un numéro de téléphone valide.");
+    if (payload.phone.replace(/\D/g, "").length < 6) return fail("Indiquez un numéro de téléphone valide.");
     if (payload.email && payload.email.indexOf("@") < 1) return fail("L'email n'est pas valide (ou laissez-le vide).");
     if (payload.age == null) return fail("Faites défiler la roue pour choisir votre âge.");
     if (payload.height == null) return fail("Faites défiler la roue pour choisir votre taille.");
     for (var i = 0; i < payload.team.length; i++) {
       var mate = payload.team[i];
       if (mate.name.length < 2) return fail("Indiquez le nom du pilote " + (i + 2) + ".");
-      if (mate.phone.replace(/\\D/g, "").length < 6) return fail("Indiquez le téléphone du pilote " + (i + 2) + ".");
+      if (mate.phone.replace(/\D/g, "").length < 6) return fail("Indiquez le téléphone du pilote " + (i + 2) + ".");
       if (mate.age == null) return fail("Choisissez l'âge du pilote " + (i + 2) + ".");
       if (mate.height == null) return fail("Choisissez la taille du pilote " + (i + 2) + ".");
       if (mate.email && mate.email.indexOf("@") < 1) return fail("L'email du pilote " + (i + 2) + " n'est pas valide.");
@@ -412,7 +394,7 @@ export const SIGNUP_PAGE = `<!doctype html>
         roster.innerHTML = "";
         (data.players || []).forEach(function (p) {
           var row = document.createElement("div");
-          row.innerHTML = '<img src="/assets/driver-' + p.color + '.png" alt=""><b>' + p.name + '</b>' +
+          row.innerHTML = '<img src="/drivers/driver-' + p.color + '.png" alt=""><b>' + p.name + '</b>' +
             '<span class="chip ' + (p.category === "JUNIOR" ? "chip-cadet" : "chip-senior") + '">' + p.category + "</span>";
           roster.appendChild(row);
         });
@@ -420,8 +402,8 @@ export const SIGNUP_PAGE = `<!doctype html>
         document.getElementById("done").classList.remove("hidden");
         window.scrollTo(0, 0);
       })
-      .catch(function (e) { fail("Envoi impossible : " + e.message + ". Vérifiez le Wi-Fi MegaKart et réessayez."); });
+      .catch(function (e) { fail("Envoi impossible : " + e.message + ". Vérifiez votre connexion et réessayez."); });
   });
 </script>
 </body>
-</html>`;
+</html>

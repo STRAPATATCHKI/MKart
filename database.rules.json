@@ -1,0 +1,128 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "invites": {
+      "$token": {
+        ".read": true,
+        ".write": "auth != null || (data.exists() && data.child('used').val() === false && data.child('expiresAt').val() > now && newData.child('used').val() === true && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('expiresAt').val() === data.child('expiresAt').val())",
+        ".validate": "newData.hasChildren(['createdAt','expiresAt','used'])",
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "used": {
+          ".validate": "newData.isBoolean()"
+        },
+        "usedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "signupId": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "label": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "$other": {
+          ".validate": false
+        },
+        "expiresAt": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "signups": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "createdAt"
+      ],
+      "$id": {
+        ".write": "auth != null || (!data.exists() && newData.exists() && root.child('invites').child(newData.child('token').val()).child('used').val() === false && root.child('invites').child(newData.child('token').val()).child('expiresAt').val() > now)",
+        ".validate": "newData.hasChildren(['name','phone','age','players','waiver','status','createdAt','token'])",
+        "token": {
+          ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 64"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 60"
+        },
+        "phone": {
+          ".validate": "newData.isString() && newData.val().length >= 6 && newData.val().length <= 24"
+        },
+        "email": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "age": {
+          ".validate": "newData.isNumber() && newData.val() >= 8 && newData.val() <= 99"
+        },
+        "height": {
+          ".validate": "newData.isNumber() && newData.val() >= 100 && newData.val() <= 220"
+        },
+        "category": {
+          ".validate": "newData.isString() && (newData.val() === 'JUNIOR' || newData.val() === 'GT')"
+        },
+        "color": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 8"
+        },
+        "waiver": {
+          ".validate": "newData.isBoolean() && newData.val() === true"
+        },
+        "offers": {
+          ".validate": "newData.isBoolean()"
+        },
+        "status": {
+          ".validate": "newData.isString() && newData.val().length <= 16"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "queueCode": {
+          ".validate": "auth != null && newData.isString()"
+        },
+        "players": {
+          ".validate": "newData.hasChildren()",
+          "$pid": {
+            ".validate": "newData.hasChildren(['name'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 60"
+            },
+            "phone": {
+              ".validate": "newData.isString() && newData.val().length <= 24"
+            },
+            "email": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "age": {
+              ".validate": "newData.isNumber() && newData.val() >= 8 && newData.val() <= 99"
+            },
+            "height": {
+              ".validate": "newData.isNumber() && newData.val() >= 100 && newData.val() <= 220"
+            },
+            "color": {
+              ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 8"
+            },
+            "category": {
+              ".validate": "newData.isString() && newData.val().length <= 16"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "queue": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "sessions": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "results": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}
