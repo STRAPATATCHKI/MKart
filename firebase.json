@@ -11,6 +11,13 @@
         "source": "**",
         "destination": "/index.html"
       }
+    ],
+    "redirects": [
+      {
+        "source": "/i",
+        "destination": "/inscription.html",
+        "type": 302
+      }
     ]
   },
   "database": {

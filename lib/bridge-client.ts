@@ -149,18 +149,7 @@ export async function pushActiveSession(payload: ActiveSessionPayload): Promise<
   throw new BridgeError("offline", `Pont de chronométrage : erreur ${res.status}.`);
 }
 
-/** The temporary inscription link behind the counter's QR: single use, a few minutes, then dead. */
-export type Invite = { token: string; url: string; expiresAt: number; ttlMinutes: number };
 
-export async function fetchInvite(fresh = false): Promise<Invite | string> {
-  let res: Response;
-  try {
-    res = await fetch(`${BRIDGE_URL}/invite`, { method: fresh ? "POST" : "GET", cache: "no-store" });
-  } catch {
-    return "Pont hors ligne : démarrez bridge.mjs sur ce PC.";
-  }
-  if (res.status === 404) return "Pont à mettre à jour : redémarrez bridge.mjs pour activer le lien d’inscription.";
-  const body = (await res.json().catch(() => null)) as (Invite & { ok?: boolean; error?: string }) | null;
-  if (!res.ok || !body || body.ok === false) return body?.error || `Lien indisponible (erreur ${res.status}).`;
-  return body;
-}
+/** The address printed on the QR poster. It never changes: the page it opens issues its own
+ *  single-use token, so one poster serves every client without ever pointing at a stale link. */
+export const PUBLIC_SIGNUP_URL = "https://mega-karts.web.app/i";

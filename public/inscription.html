@@ -428,6 +428,31 @@
       });
   });
 
+  function randomToken() {
+    var bytes = new Uint8Array(12);
+    (window.crypto || window.msCrypto).getRandomValues(bytes);
+    var out = "";
+    for (var i = 0; i < bytes.length; i++) out += "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".charAt(bytes[i] & 63);
+    return out;
+  }
+
+  // The token is what makes one scan one inscription: the database refuses it once it is used or
+  // once its 15 minutes are up, so nobody registers twice from a photo of the same screen.
+  function mintOwnInvite() {
+    var token = randomToken();
+    var now = Date.now();
+    return fetch(CLOUD_DB_URL + "/invites/" + token + ".json", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ createdAt: now, expiresAt: now + 15 * 60 * 1000, used: false }),
+    }).then(function (res) {
+      if (!res.ok) return res.text().then(function (t) { throw new Error(t || res.status); });
+      INVITE_TOKEN = token;
+      // Keep it in the address bar so a refresh continues the same inscription instead of a new one.
+      try { history.replaceState(null, "", "?t=" + token); } catch (e) {}
+    });
+  }
+
   function lockOut(title, text) {
     document.getElementById("gateTitle").textContent = title;
     document.getElementById("gateText").textContent = text;
@@ -442,7 +467,9 @@
     // Hosted, the form writes to MegaKart's database rather than to the PC at the track: say so.
     document.querySelector("footer").textContent = "Vos informations servent uniquement à la gestion de vos sessions chez MegaKart Fès.";
     if (!INVITE_TOKEN) {
-      lockOut("Scannez le QR code", "L'inscription se fait en scannant le QR code affiché à l'accueil de MegaKart Fès.");
+      mintOwnInvite().catch(function () {
+        lockOut("Connexion perdue", "Impossible de préparer votre inscription. Vérifiez votre connexion et rescannez le QR code.");
+      });
     } else {
       fetch(CLOUD_DB_URL + "/invites/" + INVITE_TOKEN + ".json")
         .then(function (res) { return res.json(); })

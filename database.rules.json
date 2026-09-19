@@ -5,7 +5,7 @@
     "invites": {
       "$token": {
         ".read": true,
-        ".write": "auth != null || (data.exists() && data.child('used').val() === false && data.child('expiresAt').val() > now && newData.child('used').val() === true && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('expiresAt').val() === data.child('expiresAt').val())",
+        ".write": "auth != null || (!data.exists() && newData.child('used').val() === false && newData.child('expiresAt').val() > now && newData.child('expiresAt').val() < now + 1800000 && newData.child('createdAt').val() < now + 300000 && newData.child('createdAt').val() > now - 300000) || (data.exists() && data.child('used').val() === false && data.child('expiresAt').val() > now && newData.child('used').val() === true && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('expiresAt').val() === data.child('expiresAt').val())",
         ".validate": "newData.hasChildren(['createdAt','expiresAt','used'])",
         "createdAt": {
           ".validate": "newData.isNumber()"

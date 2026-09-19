@@ -2,18 +2,12 @@
 
 // Sessions page: the QR poster clients scan to register, and the sign-ups that came in from it.
 // "Ajouter" drops a client straight into the session being created.
-import { Archive, Check, Printer, QrCode as QrIcon, RefreshCw, Timer, UserPlus, Wallet } from "lucide-react";
+import { Archive, Check, Printer, Timer, UserPlus, Wallet } from "lucide-react";
 import { QrCode } from "@/components/qr-code";
 import { qrSvgMarkup } from "@/lib/qr-svg";
-import { isTallEnough, kartCategory, signupPlayers, MIN_HEIGHT_CM, type Signup } from "@/lib/bridge-client";
+import { isTallEnough, kartCategory, signupPlayers, MIN_HEIGHT_CM, PUBLIC_SIGNUP_URL, type Signup } from "@/lib/bridge-client";
 import { DriverAvatar } from "@/components/big-screen/driver-avatar";
 import { useQueue } from "@/hooks/use-queue";
-import { useInvite } from "@/hooks/use-invite";
-
-const countdown = (ms: number) => {
-  const total = Math.max(0, Math.round(ms / 1000));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
-};
 
 const printPoster = (url: string) => {
   const win = window.open("", "megakart-affiche", "width=820,height=1100");
@@ -31,7 +25,7 @@ const printPoster = (url: string) => {
     </style></head><body>
     <img src="/megakart-loader-logo.png" alt="MegaKart">
     <h1>Inscrivez-vous en 30 secondes</h1>
-    <p>Connectez-vous au Wi-Fi MegaKart, scannez ce code et remplissez le formulaire.</p>
+    <p>Scannez ce code avec votre téléphone et remplissez le formulaire.</p>
     <div class="qr">${qrSvgMarkup(url, "320")}</div>
     <p>Puis présentez votre code à l'accueil pour recevoir votre kart.</p>
     <small>${url}</small>
@@ -51,9 +45,6 @@ type SignupPanelProps = {
 
 export function SignupPanel({ signups, formUrl, state, onAdd, onArchive }: SignupPanelProps) {
   const queue = useQueue();
-  // The QR shown at the counter is a one-shot link: it dies on the first inscription, and the
-  // bridge hands us the next one. The Wi-Fi form below stays as the fallback when the cloud is off.
-  const { invite, error: inviteError, remainingMs, renewing, renew } = useInvite();
   const waiting = signups.filter((s) => s.status === "new");
   const time = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
@@ -79,35 +70,13 @@ export function SignupPanel({ signups, formUrl, state, onAdd, onArchive }: Signu
 
       <div className="signup-body">
         <aside className="signup-qr-card">
-          {invite ? (
-            <>
-              <div className="signup-qr"><QrCode value={invite.url} label="QR code d’inscription à usage unique" /></div>
-              <strong>Scannez pour vous inscrire</strong>
-              <span className={"invite-countdown" + (remainingMs !== null && remainingMs < 60_000 ? " is-low" : "")}>
-                <Timer size={12} /> {remainingMs === null ? "lien actif" : remainingMs > 0 ? `expire dans ${countdown(remainingMs)}` : "expiré"}
-              </span>
-              <small>{invite.url}</small>
-              <button type="button" className="secondary-button full" onClick={() => void renew()} disabled={renewing}>
-                <RefreshCw size={14} /> {renewing ? "Nouveau lien…" : "Nouveau lien"}
-              </button>
-              <p>Ce lien ne vaut que pour une inscription : dès qu’un client valide, le QR change ici. Le client n’a pas besoin du Wi-Fi.</p>
-            </>
-          ) : formUrl ? (
-            <>
-              <div className="signup-qr"><QrCode value={formUrl} label="QR code du formulaire d'inscription" /></div>
-              <strong>Affichez ce QR à l’accueil</strong>
-              <small>{formUrl}</small>
-              <button type="button" className="secondary-button full" onClick={() => printPoster(formUrl)}><Printer size={14} /> Imprimer l’affiche</button>
-              <p>Le client doit être connecté au Wi-Fi de la piste. Ses informations restent sur cet ordinateur.</p>
-              {inviteError ? <small className="invite-note">Lien en ligne indisponible : {inviteError}</small> : null}
-            </>
-          ) : (
-            <div className="empty-state" style={{ padding: "22px 14px" }}>
-              <QrIcon size={20} />
-              <strong>{state === "offline" ? "Pont hors ligne" : "Recherche du réseau…"}</strong>
-              <span>Démarrez bridge.mjs sur ce PC pour générer le QR d’inscription.</span>
-            </div>
-          )}
+          <div className="signup-qr"><QrCode value={PUBLIC_SIGNUP_URL} label="QR code d’inscription" /></div>
+          <strong>Affichez ou imprimez ce QR</strong>
+          <span className="invite-countdown"><Timer size={12} /> lien unique à chaque scan</span>
+          <small>{PUBLIC_SIGNUP_URL}</small>
+          <button type="button" className="secondary-button full" onClick={() => printPoster(PUBLIC_SIGNUP_URL)}><Printer size={14} /> Imprimer l’affiche</button>
+          <p>Ce QR ne change jamais : chaque client qui le scanne reçoit sa propre inscription, valable une seule fois. Pas besoin du Wi-Fi.</p>
+          {formUrl ? <small className="invite-note">Sans internet, sur le Wi-Fi de la piste : {formUrl}</small> : null}
         </aside>
 
         <div className="signup-list">
