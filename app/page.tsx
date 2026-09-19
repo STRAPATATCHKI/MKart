@@ -12,6 +12,8 @@ import { apexController } from "@/lib/apex-session-controller";
 import { BigScreen } from "@/components/big-screen/big-screen";
 import { SouvenirPage } from "@/components/souvenir/souvenir-page";
 import { ReservationPage } from "@/components/reservation/reservation-page";
+import { DeskOnlyNotice } from "@/components/desk-only-notice";
+import { useIsCompact } from "@/hooks/use-compact";
 import { ChronoPanel } from "@/components/chrono/chrono-panel";
 import { FileAttenteView } from "@/components/caisse/file-attente-view";
 import { ResultSheet } from "@/components/results/result-sheet";
@@ -1374,6 +1376,7 @@ export default function Home() {
   // are an empty shell, so hydration always matches and a player's phone opening #souvenir=… never
   // mounts the dashboard (whose hooks would try to reach the timing bridge on localhost).
   const [hashView, setHashView] = useState<HashView | null>(null);
+  const isCompact = useIsCompact();
   const navigationTimers = useRef<number[]>([]);
   const navigationRun = useRef(0);
 
@@ -1436,6 +1439,9 @@ export default function Home() {
       />
     );
   }
+
+  // The dashboard itself is desktop-only; the client pages above already returned.
+  if (isCompact) return <DeskOnlyNotice />;
 
   return (
     <div className="app-shell">

@@ -897,3 +897,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--lime); outl
   .qr-reservation-row { grid-template-columns: 55px 1fr; }
   .qr-reservation-row > .payment-method { grid-column: 1 / -1; }
 }
+
+/* Desktop-only console: the notice shown when the dashboard is opened on a phone or small tablet. */
+.desk-only { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--bg, #0a0f08); }
+.desk-only-card { max-width: 420px; text-align: center; display: grid; gap: 14px; justify-items: center;
+  padding: 34px 26px; border: 1px solid var(--line); border-radius: 16px; background: #0f1512; color: var(--text, #e8f0e0); }
+.desk-only-card svg { color: var(--lime, #d8ff35); }
+.desk-only-card h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+.desk-only-card p { margin: 0; font-size: 14px; line-height: 1.55; color: var(--muted, #9aa693); }
+.desk-only-hint { font-size: 12px !important; opacity: 0.8; }
