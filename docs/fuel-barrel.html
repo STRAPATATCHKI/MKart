@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MegaKart fuel barrel</title>
+<!--
+  The fuel barrel exactly as the MegaKart dashboard draws it (components/fuel/fuel-barrel.tsx),
+  as one self-contained file to copy into the app.
+
+  Level  = fuel.today.stockL / fuel.today.capacityL   (from GET /v1/garage), clamped 0..1
+  Low    = fuel.today.low  (stock at or under the reserve) -> red instead of orange
+  The liquid slides to its level in 1.1 s, two waves drift across it, bubbles rise through it.
+  Open this file in a browser and use the slider to see it move.
+-->
+<style>
+  :root { --fuel-top: #ffd34d; --fuel-bottom: #e08a1e; }
+  .fb.is-low { --fuel-top: #ff8a6b; --fuel-bottom: #d43b2f; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; gap: 16px; background: #080b07; color: #f4f6ed; font-family: Inter, system-ui, sans-serif; }
+  .fb { width: 200px; height: auto; filter: drop-shadow(0 18px 30px rgba(0,0,0,.55)); }
+  .fb-liquid { transition: transform 1.1s cubic-bezier(.22,1,.36,1); }
+  .fb-wave { animation: fb-drift 3.4s linear infinite; }
+  .fb-wave--back { animation-duration: 5.1s; animation-direction: reverse; }
+  .fb-bubble { fill: rgba(255,255,255,.5); animation: fb-bubble 5s ease-in infinite; }
+  .fb-tick line { stroke: rgba(216,255,53,.35); stroke-width: 1.5; }
+  .fb-tick text { fill: #7f877b; font-size: 9px; font-weight: 700; font-family: Inter, sans-serif; }
+  @keyframes fb-drift { to { transform: translateX(-200px); } }
+  @keyframes fb-bubble {
+    0% { transform: translateY(0) scale(.7); opacity: 0; }
+    12% { opacity: .75; }
+    100% { transform: translateY(-190px) scale(1.1); opacity: 0; }
+  }
+  .demo { display: flex; gap: 12px; align-items: center; font-size: 13px; color: #8a9185; }
+</style>
+</head>
+<body>
+
+<svg id="barrel" class="fb" viewBox="0 0 200 260" role="img" aria-label="Cuve">
+  <defs>
+    <linearGradient id="fb-steel" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#171c15"/>
+      <stop offset="0.18" stop-color="#2c3429"/>
+      <stop offset="0.5" stop-color="#3b4536"/>
+      <stop offset="0.82" stop-color="#242b20"/>
+      <stop offset="1" stop-color="#12160f"/>
+    </linearGradient>
+    <linearGradient id="fb-fuel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="var(--fuel-top)"/>
+      <stop offset="1" stop-color="var(--fuel-bottom)"/>
+    </linearGradient>
+    <linearGradient id="fb-shine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <!-- the inside of the barrel: liquid area from y=26 to y=246 (220 high) -->
+    <clipPath id="fb-inner"><rect x="18" y="26" width="164" height="220" rx="16"/></clipPath>
+  </defs>
+
+  <!-- barrel body -->
+  <rect x="10" y="14" width="180" height="232" rx="22" fill="url(#fb-steel)" stroke="#4a5643" stroke-width="2"/>
+
+  <!-- liquid: pushed down by (1 - level) x 220 -->
+  <g clip-path="url(#fb-inner)">
+    <g id="fb-liquid" class="fb-liquid" style="transform: translateY(220px)">
+      <g class="fb-wave fb-wave--back">
+        <path d="M0 16 C 25 4, 75 4, 100 16 S 175 28, 200 16 S 275 4, 300 16 S 375 28, 400 16 V 260 H0 Z" fill="url(#fb-fuel)" opacity="0.55"/>
+      </g>
+      <g class="fb-wave fb-wave--front">
+        <path d="M0 22 C 30 12, 70 32, 100 22 S 170 12, 200 22 S 270 32, 300 22 S 370 12, 400 22 V 260 H0 Z" fill="url(#fb-fuel)"/>
+      </g>
+      <g>
+        <circle class="fb-bubble" cx="52" cy="246" r="3.4" style="animation-delay:0s;animation-duration:5.2s"/>
+        <circle class="fb-bubble" cx="88" cy="246" r="2.2" style="animation-delay:1.4s;animation-duration:6.4s"/>
+        <circle class="fb-bubble" cx="124" cy="246" r="4" style="animation-delay:2.6s;animation-duration:4.6s"/>
+        <circle class="fb-bubble" cx="152" cy="246" r="2.6" style="animation-delay:3.8s;animation-duration:7s"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- glass shine and hoops -->
+  <rect x="18" y="26" width="46" height="220" rx="16" fill="url(#fb-shine)"/>
+  <rect x="10" y="70" width="180" height="9" rx="4" fill="#0e120c" opacity="0.55"/>
+  <rect x="10" y="130" width="180" height="9" rx="4" fill="#0e120c" opacity="0.55"/>
+  <rect x="10" y="190" width="180" height="9" rx="4" fill="#0e120c" opacity="0.55"/>
+  <rect x="10" y="14" width="180" height="232" rx="22" fill="none" stroke="rgba(216,255,53,.25)" stroke-width="1.5"/>
+
+  <!-- level ticks: 0 %, 25 %, 50 %, 75 %, 100 % -->
+  <g class="fb-tick"><line x1="166" y1="246" x2="182" y2="246"/><text x="160" y="249.5" text-anchor="end">0</text></g>
+  <g class="fb-tick"><line x1="166" y1="191" x2="182" y2="191"/><text x="160" y="194.5" text-anchor="end">25</text></g>
+  <g class="fb-tick"><line x1="166" y1="136" x2="182" y2="136"/><text x="160" y="139.5" text-anchor="end">50</text></g>
+  <g class="fb-tick"><line x1="166" y1="81" x2="182" y2="81"/><text x="160" y="84.5" text-anchor="end">75</text></g>
+  <g class="fb-tick"><line x1="166" y1="26" x2="182" y2="26"/><text x="160" y="29.5" text-anchor="end">100</text></g>
+</svg>
+
+<div class="demo">
+  <input id="level" type="range" min="0" max="100" value="72">
+  <span id="label">72 %</span>
+  <label><input id="low" type="checkbox"> stock bas</label>
+</div>
+
+<script>
+  // The only thing that changes: how far down the liquid sits, and orange or red.
+  //   level = stockL / capacityL (0..1), low = fuel.today.low
+  function setBarrel(level, low) {
+    var clamped = Math.min(1, Math.max(0, level));
+    document.getElementById("fb-liquid").style.transform = "translateY(" + ((1 - clamped) * 220) + "px)";
+    document.getElementById("barrel").classList.toggle("is-low", !!low);
+    document.getElementById("barrel").setAttribute("aria-label", "Cuve à " + Math.round(clamped * 100) + " %");
+  }
+  var range = document.getElementById("level");
+  var low = document.getElementById("low");
+  function update() {
+    document.getElementById("label").textContent = range.value + " %";
+    setBarrel(range.value / 100, low.checked);
+  }
+  range.addEventListener("input", update);
+  low.addEventListener("change", update);
+  setTimeout(update, 50);
+</script>
+</body>
+</html>
