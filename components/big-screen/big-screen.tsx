@@ -5,7 +5,7 @@
 // live re-ordering → chequered flag → podium reveal.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  ChevronsDown, ChevronsUp, Crown, Flag, Maximize, Minimize, Play, Radio, Timer, Trophy,
+  ChevronsDown, ChevronsUp, Crown, Flag, History, Maximize, Minimize, Play, Radio, Timer, Trophy,
   TrafficCone, Volume2, VolumeX, X, Zap,
 } from "lucide-react";
 import { useLiveRace } from "@/hooks/use-live-race";
@@ -29,6 +29,8 @@ import { useTiming } from "@/hooks/use-timing";
 import { useTrackRecord } from "@/hooks/use-track-record";
 import { compareToRecord, dayBestLap, fmtRecord } from "@/lib/track-record";
 import { useSavedRaces } from "@/hooks/use-saved-races";
+import { byBestLap } from "@/lib/best-lap-order";
+import { souvenirFromSavedRace } from "@/lib/saved-race-souvenir";
 
 const SIM_LAPS = 8;
 const SIM_SPEED = 9; // simulated ms per real ms → an 8-lap race lasts ~40 s on screen
@@ -73,6 +75,9 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [moves, setMoves] = useState<Record<string, Move>>({});
   const [muted, setMuted] = useState(false);
+  // "Résultats": the races Timing Control saved (on disk, so they survive closing it), to bring
+  // a past podium back on screen after the next race has started.
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [idle, setIdle] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -130,27 +135,21 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
   const chronoRows = useMemo<BoardRow[]>(() => {
     const drivers = chrono.race?.drivers ?? [];
     if (!drivers.length) return [];
-    const ordered = [...drivers].sort((a, b) =>
-      (a.position ?? 999) - (b.position ?? 999) || (a.grid ?? 999) - (b.grid ?? 999));
-    const leaderLaps = ordered[0]?.laps ?? 0;
-    // The chrono already ordered the field by the session's rule; this column only has to say
-    // the gap in that rule's currency - laps in a race, seconds in a time trial.
-    const chronos = chrono.race?.rankMode === "chronos";
+    // MegaKart's rule: best lap wins, laps do not count - applied here too, so a race the chrono
+    // started in the old lap mode still shows in the right order.
+    const ordered = byBestLap(drivers);
     const fastest = ordered[0]?.bestLapMs ?? null;
+    // The fastest single lap of the whole field: in a race it can belong to someone who did
+    // fewer laps, and the podium says so rather than leaving the crowd to wonder.
+    const bests = ordered.map((d) => d.bestLapMs).filter((v): v is number => v != null && v > 0);
+    const fieldBest = bests.length ? Math.min(...bests) : null;
     return ordered.map((d, i) => {
-      // Before anyone has crossed, every driver is on zero laps: showing "+0 tr" for the whole
-      // grid reads as a race in progress. The grid slot is the honest thing to show there.
-      const behind = leaderLaps - d.laps;
+      // The gap is in the rule's currency: seconds of best lap behind the leader. Before a
+      // driver has a lap there is nothing to compare - the grid slot is the honest thing to show.
       let gap: string;
-      if (chronos) {
-        if (i === 0) gap = fastest != null ? "LEADER" : "GRILLE";
-        else if (fastest != null && d.bestLapMs != null) gap = `+${((d.bestLapMs - fastest) / 1000).toFixed(3)}`;
-        else gap = d.grid ? `P${d.grid}` : "\u2014";
-      } else {
-        gap = i === 0
-          ? (leaderLaps > 0 ? "LEADER" : "GRILLE")
-          : (leaderLaps > 0 ? (behind > 0 ? `+${behind} tr` : "\u2014") : (d.grid ? `P${d.grid}` : "\u2014"));
-      }
+      if (i === 0) gap = fastest != null ? "LEADER" : "GRILLE";
+      else if (fastest != null && d.bestLapMs != null) gap = `+${((d.bestLapMs - fastest) / 1000).toFixed(3)}`;
+      else gap = d.grid ? `P${d.grid}` : "\u2014";
       return {
         id: d.transponder || `kart-${d.kart}`,
         rank: i + 1,
@@ -165,6 +164,7 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
         finished: chrono.race?.state === "FINISHED",
         lapProgress: 0,
         pilot: d.color ?? null,
+        fastest: fieldBest != null && d.bestLapMs === fieldBest,
       } as BoardRow;
     });
   }, [chrono.race]);
@@ -178,6 +178,13 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
   const recordCmp = compareToRecord(bestMs, record);
   const chronoFinished = chrono.race?.state === "FINISHED" && chronoRows.length > 0;
   const raceOver = source === "sim" ? simDone : chronoFinished || (live.status === "finished" && rows.length > 0);
+  // Real races Timing Control saved, newest first: what "Résultats" lists and what "Podium"
+  // falls back to when no race has just finished (after the chrono was closed and reopened).
+  const pastRaces = useMemo(() => savedRaces
+    .filter((r) => r.racers.length > 0 && !/^\s*\[sim\]/i.test(r.name ?? ""))
+    .sort((a, b) => (b.finishedAt ?? b.startedAt ?? b.savedAt ?? 0) - (a.finishedAt ?? a.startedAt ?? a.savedAt ?? 0))
+    .slice(0, 12), [savedRaces]);
+  const latestSaved = pastRaces[0] ?? null;
 
   // PREPARE is what ends the idle screen: the moment there is a field, the board takes over.
   // Anything the operator does by hand (DIRECT, PODIUM, the start lights) also wins, so this
@@ -242,6 +249,11 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
   };
 
   const showResult = (race: RaceSouvenir) => {
+    if (!race.records && race.kind === "race") {
+      const dayBest = dayBestLap(savedRaces, [], record, new Date(race.finishedAt));
+      race = { ...race, records: { dayBestMs: dayBest?.lapMs ?? null, dayBestBy: dayBest?.driver ?? null, recordMs: record.lapMs, recordBy: record.driver } };
+    }
+    setHistoryOpen(false);
     resetBoard();
     simRef.current = null;
     setSimDone(false);
@@ -249,6 +261,13 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
     setShownResult({ race, url: null });
     setPhase("podium");
     void souvenirUrl(race).then((url) => setShownResult((current) => (current?.race === race ? { race, url } : current)));
+  };
+
+  // The race that just finished; otherwise the latest one Timing Control saved - so the podium
+  // can be brought back even after the chrono was closed and opened again.
+  const showPodium = () => {
+    if (raceOver) { setHistoryOpen(false); setPhase("podium"); return; }
+    if (latestSaved) showResult(souvenirFromSavedRace(latestSaved));
   };
 
   // Lights the five reds one per beat, then hands over at "go". The caller decides what
@@ -483,7 +502,7 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
   const chronoRaceId = chrono.race?.raceId ?? null;
   useEffect(() => {
     if (!chronoFinished || !chronoRaceId || chronoResult?.id === chronoRaceId) return;
-    const drivers = [...(chrono.race?.drivers ?? [])].sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
+    const drivers = byBestLap(chrono.race?.drivers ?? []);
     const race: RaceSouvenir = {
       id: chronoRaceId,
       finishedAt: chrono.race?.finishedAt ?? new Date().toISOString(),
@@ -581,10 +600,12 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
         // The real start, on its own key: never on Space, which is the simulation's.
         e.preventDefault();
         void startRace();
-      } else if (key === "p" && raceOver) setPhase("podium");
+      } else if (key === "p") showPodium();
+      else if (key === "h") setHistoryOpen((o) => !o);
       else if (key === "f") toggleFullscreen();
       else if (key === "m") setMuted((m) => !m);
       else if (key === "l") goLive();
+      else if (key === "escape" && historyOpen) setHistoryOpen(false);
       else if (key === "escape" && (phase === "podium" || phase === "finish")) setPhase("board");
     };
   });
@@ -868,8 +889,13 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
           <TrafficCone /> Départ <kbd>D</kbd>
         </button>
 
-        <button type="button" className="bs-btn" onClick={() => setPhase("podium")} disabled={!raceOver || phase === "podium"}>
+        <button type="button" className="bs-btn" onClick={showPodium} disabled={(!raceOver && !latestSaved) || phase === "podium"}
+          title={raceOver ? "Podium de la course terminée" : latestSaved ? `Podium de la dernière course : ${latestSaved.name ?? latestSaved.raceId}` : "Aucune course enregistrée"}>
           <Trophy /> Podium <kbd>P</kbd>
+        </button>
+        <button type="button" className={"bs-btn" + (historyOpen ? " is-active" : "")} onClick={() => setHistoryOpen((o) => !o)}
+          disabled={pastRaces.length === 0} title="Revoir le podium d’une course précédente">
+          <History /> Résultats <kbd>H</kbd>
         </button>
         <button type="button" className={"bs-btn" + (source === "live" ? " is-active" : "")} onClick={goLive}>
           <Radio /> Direct <kbd>L</kbd>
@@ -886,6 +912,28 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
           </button>
         )}
       </nav>
+
+      {historyOpen && (
+        <div className="bs-history" role="dialog" aria-label="Courses précédentes">
+          <header><History /> Courses précédentes <button type="button" onClick={() => setHistoryOpen(false)} aria-label="Fermer"><X /></button></header>
+          <ul>
+            {pastRaces.map((race) => {
+              const order = byBestLap(race.racers);
+              const when = race.finishedAt ?? race.startedAt ?? race.savedAt;
+              return (
+                <li key={race.raceId}>
+                  <button type="button" onClick={() => showResult(souvenirFromSavedRace(race))}>
+                    <time>{when ? new Date(when * 1000).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</time>
+                    <b>{race.name ?? race.raceId}</b>
+                    <span><Crown /> {order[0]?.driver ?? "—"}</span>
+                    <em>{fmtLap(order[0]?.bestLapMs ?? null)}</em>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {startError && (
         <p className="bs-start-error" role="alert" onClick={() => setStartError(null)}>{startError}</p>

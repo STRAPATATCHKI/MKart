@@ -104,3 +104,19 @@ test("a full 12-kart souvenir link still fits a QR code a phone can scan from th
   const qr = QrCode.encodeText(url, Ecc.MEDIUM);
   assert.ok(qr.version <= 20, `QR version ${qr.version} is too dense for a TV scan`);
 });
+
+test("a saved race comes back as a podium in best-lap order, with its pilot colours", async () => {
+  const { souvenirFromSavedRace } = await vite.ssrLoadModule("/lib/saved-race-souvenir.ts");
+  const t = 1790280000;
+  const back = souvenirFromSavedRace({
+    raceId: "20260924-008", name: "SESSION 5", state: "FINISHED", startedAt: t - 480, finishedAt: t, savedAt: t, durationS: 480,
+    kartMapping: { T7: { kartNumber: 7, enabled: true, color: 6 }, T8: { kartNumber: 8, enabled: true, color: 7 } },
+    racers: [
+      { driver: "KHADIJA", kart: 8, transponder: "T8", position: 1, laps: 14, bestLapMs: 27492, lastLapMs: 29000 },
+      { driver: "YASSEN", kart: 7, transponder: "T7", position: 2, laps: 13, bestLapMs: 27300, lastLapMs: 28000 },
+    ],
+  });
+  assert.deepEqual(back.drivers.map((d) => [d.name, d.pilot]), [["YASSEN", 6], ["KHADIJA", 7]]);
+  assert.equal(back.kind, "race");
+  assert.equal(back.finishedAt, new Date(t * 1000).toISOString());
+});

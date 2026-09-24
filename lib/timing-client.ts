@@ -28,6 +28,7 @@ export type TimingDriver = {
   bestLapIndex?: number | null;
   grid?: number | null;   // starting slot, 1 = pole
   color?: number | null;  // pilot colour 1-8, made distinct within the race by the chrono
+  lastPassingAt?: number | null;  // epoch ms of the kart's last crossing of the line
 };
 
 export type TimingRace = {

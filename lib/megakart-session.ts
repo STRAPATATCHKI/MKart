@@ -19,8 +19,10 @@ export type SessionType = "practice" | "race" | "game" | "merge";
  * is fair to rank on is the best lap.
  */
 export type RankMode = "course" | "chronos";
-export function rankModeFor(type: SessionType): RankMode {
-  return type === "race" ? "course" : "chronos";
+// Every session is ranked by best lap: the number of laps does not count, so a pilot with one
+// lap and the best time wins (MegaKart's rule since 2026-09-24). The type stays a label.
+export function rankModeFor(_type: SessionType): RankMode {
+  return "chronos";
 }
 
 export const SESSION_TYPE_LABELS: { value: SessionType; label: string }[] = [

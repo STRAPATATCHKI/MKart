@@ -5,7 +5,7 @@
 // It sits directly under the race deck because that is where the operator is standing when they
 // press « Session suivante »: the race they just ran leaves the deck at that moment, and this is
 // where they turn to find it again. Newest first, one line each, and the laps only when asked.
-import { AlertTriangle, ChevronDown, ChevronRight, History } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, History, Trophy } from "lucide-react";
 import { Fragment, useState } from "react";
 
 /** How many races the panel lists before asking. */
@@ -15,6 +15,8 @@ import { fmtLap, hasLapList, lapRows } from "@/components/timing/lap-rows";
 import { bestLap, classification, pilotLabel, type RaceSummary } from "@/components/timing/race-summaries";
 import type { RaceHistoryView } from "@/hooks/use-race-history";
 import type { TimingSavedRace } from "@/lib/timing-client";
+import { showResultOnBigScreen } from "@/lib/screen-channel";
+import { souvenirFromSavedRace } from "@/lib/saved-race-souvenir";
 
 export function RaceHistoryPanel({ history }: { history: RaceHistoryView }) {
   // One race open at a time: an evening holds a dozen results and every one of them unfolds into
@@ -120,6 +122,12 @@ function RaceDetail({ summary, state }: { summary: RaceSummary; state: RaceHisto
           Meilleur tour de la course : <b style={{ color: "#d8ff35", fontFamily: "monospace" }}>{fmtLap(fastest.ms)}</b> — {fastest.driver}
         </p>
       ) : null}
+      {/* Bring this race's podium back on the TV, with its QR souvenir - after the next race has
+          started, or after the chrono was closed and reopened. The TV must be open on this PC. */}
+      <button type="button" className="secondary-button" style={{ margin: "4px 0 10px" }}
+        onClick={() => showResultOnBigScreen(souvenirFromSavedRace(race))}>
+        <Trophy size={14} /> Podium sur l’écran TV
+      </button>
 
       <div className="race-history-grid race-history-grid--head">
         <span>POS</span><span>PILOTE</span><span>KART</span><span>TOURS</span><span>MEILLEUR</span>

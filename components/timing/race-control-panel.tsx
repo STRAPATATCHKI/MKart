@@ -9,6 +9,7 @@ import { Fragment, useEffect, useState } from "react";
 import { DriverAvatar } from "@/components/big-screen/driver-avatar";
 import { avgSpeedKmh, fmtLap, fmtSpeed, hasLapList, isExpanded, lapRows } from "@/components/timing/lap-rows";
 import { LiveTrack, type TrackDriver } from "@/components/track/live-track";
+import { byBestLap } from "@/lib/best-lap-order";
 import { requestStartLights } from "@/lib/screen-channel";
 import { explainTimingError, timing, TimingOffline, type TimingCommandResult } from "@/lib/timing-client";
 import { useTrackRoute } from "@/hooks/use-track";
@@ -158,7 +159,9 @@ export function RaceControlPanel({ view, draft, onNotice }: Props) {
                 <span>Remplissez le formulaire de session puis « Envoyer au chrono ».</span>
               </div>
             ) : (
-              race!.drivers.map((d) => {
+              // Best lap first, laps do not count (lib/best-lap-order.ts), whatever mode the
+              // chrono was started in.
+              byBestLap(race!.drivers).map((d, index) => {
                 const pilot = (d as TrackDriver).color ?? view.karts.find((k) => k.kart === d.kart)?.color ?? null;
                 const detailed = hasLapList(d);
                 const open = detailed && isExpanded(d.transponder, openLaps, race!.drivers.length);
@@ -166,7 +169,7 @@ export function RaceControlPanel({ view, draft, onNotice }: Props) {
                 return (
                   <Fragment key={d.transponder}>
                   <article className="qr-reservation-row" style={{ gridTemplateColumns: "40px 50px 2fr 60px 60px 1fr 1fr", alignItems: "center" }}>
-                    <strong>{d.position ?? "—"}</strong>
+                    <strong>{d.bestLapMs != null || d.laps > 0 ? index + 1 : "—"}</strong>
                     <span style={{ color: "#8aa0b6" }}>{d.grid ? `P${d.grid}` : "—"}</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       {pilot ? <DriverAvatar pilot={pilot} seed={d.driver} size="26px" /> : null}

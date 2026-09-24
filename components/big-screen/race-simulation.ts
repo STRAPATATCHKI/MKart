@@ -15,6 +15,8 @@ export type BoardRow = {
   finished: boolean;
   lapProgress: number; // 0..1 through the current lap
   pilot?: number | null; // pilot picked at sign-up (1-8)
+  /** Set the fastest single lap of the race - shown even when the driver finished lower. */
+  fastest?: boolean;
 };
 
 export type RaceEvent =

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LayoutList, Play, Trophy } from "lucide-react";
+import { LayoutList, Play, Trophy, Zap } from "lucide-react";
 import { Confetti } from "./confetti";
 import type { BoardRow } from "./race-simulation";
 import type { RaceSound } from "./race-sound";
@@ -80,7 +80,9 @@ export function Podium({ rows, subtitle, sound, souvenirUrl, onBack, onReplay }:
                 <small>KART {row.kart}</small>
                 <div className="bs-place-stats">
                   <span><em>{primary.k}</em>{primary.v}</span>
-                  <span><em>MEILLEUR</em>{row.best}</span>
+                  <span className={row.fastest ? "is-fastest" : undefined}>
+                    <em>{row.fastest ? <><Zap aria-hidden="true" /> MEILLEUR TOUR</> : "MEILLEUR"}</em>{row.best}
+                  </span>
                 </div>
               </div>
               <div className="bs-pedestal-wrap">
