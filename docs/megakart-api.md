@@ -99,8 +99,10 @@ between crossings the position is estimated, exactly as the MegaKart dashboard d
 
 ## Where it runs
 
-The MKart web service on Render (`https://mkart-7c44.onrender.com`) serves the API under `/v1`
-as soon as it has these two environment variables:
+The MKart web service on Render (`https://mkart-7c44.onrender.com`) is the API and nothing
+else: it serves `/v1` only — no dashboard, no other route (the dashboard runs on the venue PC).
+`/` answers `{ "service": "MegaKart API", "health": "/v1/health" }`; anything else outside `/v1`
+is a JSON 404. It needs these two environment variables:
 
 | variable | value |
 |---|---|

@@ -10,6 +10,11 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 
 if (!process.env.RENDER) process.exit(0); // a laptop install: nothing to do
+// Online the desk serves only the MegaKart API (desk.mjs, API_ONLY): no page to build.
+if (process.env.DESK_SERVE_DASHBOARD !== "1") {
+  console.log("[render] API seule : pas de bundle web à construire");
+  process.exit(0);
+}
 if (fs.existsSync("dist/client/index.html")) {
   console.log("[render] bundle déjà présent");
   process.exit(0);
