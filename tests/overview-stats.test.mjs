@@ -134,3 +134,20 @@ test("today's best laps: one line per driver, fastest first, simulations left ou
   ], NOW);
   assert.deepEqual(out.map((b) => [b.driver, b.bestLapMs]), [["Sofia", 29500], ["karim", 30000]]);
 });
+
+test("a payment made two ways counts its cash part as cash and its card part as card", () => {
+  const rs = [res("A", { status: "PAYEE", paidAt: at(24, 11), paidAmount: 300, paymentMethod: "Espèces", paidSplit: { cash: 200, card: 100 } })];
+  const day = S.moneyByDay(rs, [], ["2026-09-24"]).get("2026-09-24");
+  assert.deepEqual([day.total, day.cash, day.card], [300, 200, 100]);
+});
+
+test("a deleted reservation never counts as revenue, even one that had been paid (tests, mistakes)", () => {
+  const rs = [
+    res("REAL", { status: "PAYEE", paidAt: at(24, 11), paidAmount: 300 }),
+    res("TEST", { status: "SUPPRIMEE", deletedFrom: "PAYEE", paidAt: at(24, 12), paidAmount: 500 }),
+  ];
+  const day = S.moneyByDay(rs, [], ["2026-09-24"]).get("2026-09-24");
+  assert.deepEqual([day.total, day.count], [300, 1]);
+  assert.deepEqual(S.todayBookings(rs, [], NOW).map((b) => b.code), ["REAL"]);
+  assert.equal(S.packSales(rs, [], ["2026-09-24"]).reduce((n, p) => n + p.amount, 0), 300);
+});

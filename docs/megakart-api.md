@@ -47,6 +47,7 @@ unreachable, retry).
 | `/v1/live` | the race on track now (see below) |
 | `/v1/live/stream` | the same, pushed as Server-Sent Events (`event: live`) whenever it changes |
 | `/v1/track` | the circuit drawing |
+| `/v1/garage` | fuel and spare parts: `fuel.today` (reading, stock left, burned by races and by karts going round outside a race, each race and run), `fuel.days`, `parts` (stock, to reorder, last 100 movements) |
 
 Field-by-field descriptions of payments, days, reservations and races are in
 `docs/firebase-reports.md` — the API returns those documents unchanged, as arrays.

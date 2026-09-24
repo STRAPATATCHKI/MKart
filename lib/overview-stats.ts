@@ -56,7 +56,9 @@ export function moneyByDay(reservations: Reservation[], signups: Signup[], days:
     if (amount == null) { m.unknown += 1; continue; }
     if (estimated) m.estimated += 1;
     m.total += amount;
-    if (r.paymentMethod === "Espèces") m.cash += amount; else m.card += amount;
+    // Paid two ways: each part in its own column.
+    if (r.paidSplit && !estimated) { m.cash += r.paidSplit.cash; m.card += r.paidSplit.card; }
+    else if (r.paymentMethod === "Espèces") m.cash += amount; else m.card += amount;
   }
   return out;
 }
@@ -216,7 +218,7 @@ export function todayBookings(reservations: Reservation[], signups: Signup[], no
       estimated: estimated || !isPaid(r),
       status,
       source: r.channel === "enligne" ? "Inscription QR" : "Guichet",
-      payment: isPaid(r) ? r.paymentMethod : null,
+      payment: isPaid(r) ? (r.paidSplit ? `Espèces ${r.paidSplit.cash} DH + Carte ${r.paidSplit.card} DH` : r.paymentMethod) : null,
       paidBy: isPaid(r) ? r.paidBy : null,
       note: r.note,
     });

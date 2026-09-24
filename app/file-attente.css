@@ -202,3 +202,20 @@
   padding: 10px 12px 10px 16px; border-radius: 10px; background: #1a2024; border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,.45);
   font-size: 13px; font-weight: 700; }
 .fa-toast button { padding: 6px 12px; border: 0; border-radius: 7px; background: var(--lime); color: #0b0e05; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+
+/* Paid two ways: a cash part and a card part. */
+.fa-split-open { padding: 8px 12px; border: 1px dashed var(--line); border-radius: 8px; background: transparent; color: var(--muted);
+  font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.fa-split-open:hover { border-color: var(--lime); color: var(--lime); }
+.fa-split { display: grid; grid-template-columns: 1fr auto 1fr auto auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid rgba(216,255,53,.35); border-radius: 10px; background: rgba(216,255,53,.05); }
+.fa-split label { display: grid; gap: 4px; }
+.fa-split label span { font-size: 12px; color: #8aa0b6; }
+.fa-split input { padding: 10px 12px; border-radius: 8px; border: 1px solid #26303d; background: #0e1520; color: #e8eef5; font: inherit; font-size: 18px; font-weight: 800; }
+.fa-split input:focus { outline: none; border-color: var(--lime); }
+.fa-split > b { padding-bottom: 12px; color: #8aa0b6; font-size: 18px; }
+.fa-split > strong { padding-bottom: 10px; color: var(--lime); font-size: 22px; white-space: nowrap; }
+.fa-split-note { grid-column: 1 / -1; color: #f5b83d; font-size: 12px; font-weight: 700; }
+.fa-split-err { grid-column: 1 / -1; color: #ff9795; font-size: 11px; }
+.fa-split-actions { grid-column: 1 / -1; display: flex; gap: 10px; }
+.fa-split-actions .fa-cash { flex: 1; }
+.fa-split-actions .fa-undo { padding: 0 14px; border-radius: 8px; font: inherit; font-size: 12px; cursor: pointer; }

@@ -41,7 +41,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_STARTED_AT = Date.now();
 // The code this process runs; newer on disk than BRIDGE_STARTED_AT means a restart is due.
 const BRIDGE_CODE = ["bridge.mjs", "signup-page.mjs", "cloud.mjs", "chrono.mjs", "kart-map.mjs", "cloud-reports.mjs", "report-docs.mjs"].map((f) => path.join(__dirname, f))
-  .concat(path.join(__dirname, "..", "..", "lib", "offer-rules.mjs"));
+  .concat(path.join(__dirname, "..", "..", "lib", "offer-rules.mjs"), path.join(__dirname, "..", "..", "lib", "fuel-rules.mjs"));
 const OUT_DIR = path.join(__dirname, "out");
 fs.mkdirSync(OUT_DIR, { recursive: true });
 const CAPTURE = path.join(OUT_DIR, "capture.log");

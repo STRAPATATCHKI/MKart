@@ -2,6 +2,13 @@
 // what the fleet burns. Kept as plain data + pure maths so the page only has to draw it.
 //
 // Persistence: localStorage (this PC), same as the session store.
+//
+// Since 2026-09-24 the fuel burned is counted race by race: every race Timing Control saves
+// takes its real duration x each kart that drove, at the JUNIOR or GT rate. The stock falls
+// through the day from the morning reading instead of waiting for tomorrow's.
+
+import type { TimingSavedRace } from "@/lib/timing-client";
+import * as rules from "./fuel-rules.mjs";
 
 export type FuelSettings = {
   capacityL: number; // barrel size, for the gauge
@@ -11,12 +18,16 @@ export type FuelSettings = {
   gtKarts: number;
   sessionMinutes: number; // a standard session, for "how many sessions left"
   reserveL: number; // below this, reorder
+  /** Kart numbers of the JUNIOR karts; every other kart counts as GT. */
+  juniorKartNumbers: number[];
 };
 
 export type FuelDay = {
   date: string; // YYYY-MM-DD
   openingL: number; // measured in the barrel this morning
   refillL: number; // added during the day
+  /** When the morning level was measured: races before it are already in the reading. */
+  measuredAt?: string;
   note?: string;
   updatedAt: string;
 };
@@ -31,13 +42,15 @@ export const DEFAULT_FUEL_SETTINGS: FuelSettings = {
   gtKarts: 8,
   sessionMinutes: 8,
   reserveL: 75,
+  juniorKartNumbers: [],
 };
 
 const KEY = "megakart-fuel-v1";
 
 // Values the first version shipped with. A stored setting still sitting on one of these was never
 // touched by the operator, so it follows the new default; anything else they typed is left alone.
-const SUPERSEDED_DEFAULTS: Partial<Record<keyof FuelSettings, number>> = {
+type NumericSetting = Exclude<keyof FuelSettings, "juniorKartNumbers">;
+const SUPERSEDED_DEFAULTS: Partial<Record<NumericSetting, number>> = {
   capacityL: 200,
   gtLph: 4.2,
   reserveL: 40,
@@ -45,7 +58,8 @@ const SUPERSEDED_DEFAULTS: Partial<Record<keyof FuelSettings, number>> = {
 
 function migrateSettings(stored: Partial<FuelSettings>): FuelSettings {
   const settings = { ...DEFAULT_FUEL_SETTINGS, ...stored };
-  for (const [key, oldDefault] of Object.entries(SUPERSEDED_DEFAULTS) as Array<[keyof FuelSettings, number]>) {
+  if (!Array.isArray(settings.juniorKartNumbers)) settings.juniorKartNumbers = [];
+  for (const [key, oldDefault] of Object.entries(SUPERSEDED_DEFAULTS) as Array<[NumericSetting, number]>) {
     if (stored[key] === oldDefault) settings[key] = DEFAULT_FUEL_SETTINGS[key];
   }
   return settings;
@@ -169,6 +183,27 @@ export function dailyUsage(days: FuelDay[]): Array<{ day: FuelDay; usedL: number
   const sorted = sortDays(days);
   return sorted.map((day, index) => ({ day, usedL: usageBetween(sorted[index + 1], day) }));
 }
+
+// ------------------------------------------------------------------ fuel burned by real races
+// The rules live in lib/fuel-rules.mjs, shared with the bridge that sends them to the app.
+
+export type RaceFuel = { raceId: string; name: string; at: number; minutes: number; juniorKarts: number; gtKarts: number; litres: number };
+export type RunFuel = { transponder: string; kart: number | null; start: number; end: number; passes: number; minutes: number; junior: boolean; litres: number };
+export type DayFuel = { day: string; races: RaceFuel[]; runs: RunFuel[]; racesL: number; freeL: number; totalL: number };
+/** A kart going round outside a race, as Timing Control logs it (times in seconds). */
+export type FreeStint = { transponder: string; kart: number | null; start: number; end: number; passes: number };
+
+/** "1, 2 3;4" -> [1, 2, 3, 4]. */
+export function parseKartList(text: string): number[] {
+  return [...new Set(text.split(/[\s,;]+/).map((t) => Number(t)).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
+}
+
+export const raceFuel = (race: TimingSavedRace, settings: FuelSettings): RaceFuel | null => rules.raceFuel(race, settings);
+export const stintFuel = (stint: FreeStint, settings: FuelSettings): RunFuel | null => rules.stintFuel(stint, settings);
+export const dayFuel = (races: TimingSavedRace[], stints: FreeStint[], settings: FuelSettings, day: string): DayFuel =>
+  rules.dayFuel(races, stints, settings, day);
+export const liveFuelStock = (reading: FuelDay | null, fuel: DayFuel): { stockL: number; burnedL: number } =>
+  rules.liveFuelStock(reading, fuel);
 
 export const formatL = (litres: number, digits = 1) =>
   `${litres.toFixed(digits).replace(/\.0$/, "")} L`;

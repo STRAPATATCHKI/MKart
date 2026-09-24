@@ -116,6 +116,8 @@ export function createApiHandler({ apiKey, log = console.log }) {
       if (path === "/v1/live") { send(res, 200, (await read("live.json")) ?? { state: "IDLE" }); return true; }
       if (path === "/v1/live/stream") { openStream(req, res); return true; }
       if (path === "/v1/track") { send(res, 200, (await read("track.json")) ?? null); return true; }
+      // The Garage: today's fuel (reading, races, free runs, stock), fuel per day, spare parts.
+      if (path === "/v1/garage") { send(res, 200, (await read("garage.json")) ?? null); return true; }
 
       if (path === "/v1/days") {
         const from = url.searchParams.get("from");

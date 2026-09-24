@@ -54,7 +54,8 @@ To take access back: `node grant-app-access.mjs --remove <UID>` in `tools\apex-b
 | `day`, `paidAt` | when it was cashed |
 | `amount` | dirhams collected |
 | `estimated` | `true` when the amount was not typed at the till but taken from the pack price (payments taken before the till asked for the amount) |
-| `method` | `cash`, `card` or `other`; `methodLabel` is the French label |
+| `method` | `cash`, `card`, `mixed` (paid two ways) or `other`; `methodLabel` is the French label |
+| `cash`, `card` | the part paid in cash and the part paid by card (both set when `mixed`; they add up to `amount`) |
 | `by` | the cashier's initials |
 | `pack` | the pack sold (the one corrected at the counter, if it was) |
 | `pilots` | number of pilots |
@@ -95,6 +96,31 @@ How to animate the karts on the circuit from these: `docs/megakart-api.md`.
 
 `width` 704, `height` 268, `points[]` (closed loop, driving order), `start` (index of the timing
 line). The same drawing as the TV and the dashboard.
+
+### `/reports/garage` — fuel and spare parts
+
+`fuel/today` (updated within 30 s):
+
+| field | meaning |
+|---|---|
+| `day` | today |
+| `readingL`, `refillL`, `measuredAt` | the morning barrel reading, litres poured in since, and when it was measured |
+| `stockL` | litres left now: reading + refills − everything burned since the reading (`null` before the reading) |
+| `burnedSinceReadingL` | what was burned since the reading |
+| `racesL`, `freeRunsL`, `totalL` | burned today by races, by karts going round outside a race (tests, warm-ups), in total |
+| `capacityL`, `reserveL`, `low` | barrel size, alert level, and whether the stock is at or under it |
+| `races[]` | `raceId`, `name`, `at`, `minutes`, `juniorKarts`, `gtKarts`, `litres` |
+| `runs[]` | outside a race: `kart`, `transponder`, `start`, `end`, `passes`, `minutes`, `litres` |
+
+`fuel/days/{YYYY-MM-DD}`: `racesL`, `freeRunsL`, `totalL`, `races` and `runs` (counts) for each day.
+
+Fuel is counted from what the chrono saw: a race is its real length × each kart that did a lap;
+a kart outside a race counts from its first pass to its last plus one lap; JUNIOR karts at the
+junior rate, the others at the GT rate (both set on the venue's Garage page).
+
+`parts`: `items[]` (`name`, `category`, `fits`, `unit`, `stock`, `minStock`, `low`, `unitPrice`),
+`toReorder[]` (the parts at or under their minimum), `moves[]` (the last 100: `at`, `part`, `qty`,
+`kind` `entree`/`sortie`, `kart`, `note`, `by`), `savedAt`.
 
 ### `/reports/meta`
 

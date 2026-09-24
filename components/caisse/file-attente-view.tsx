@@ -234,7 +234,7 @@ export function FileAttenteView({ search }: { search: string }) {
               onSetPack={(offerId) => q.setPack(r.code, offerId, operator || "CAISSE")}
               open={openCode === r.code}
               onToggle={() => setOpenCode(openCode === r.code ? null : r.code)}
-              onPay={(mode, amount) => void q.pay(r.code, mode, operator || "CAISSE", amount)}
+              onPay={(mode, amount, split) => void q.pay(r.code, mode, operator || "CAISSE", amount, split)}
               onUnpay={() => void q.unpay(r.code)}
               onStatus={(s) => void q.setStatus(r.code, s)}
               onKarts={(map) => void q.assignKarts(r.code, map)}
@@ -307,7 +307,7 @@ function Row({ r, karts, pack, clientCode, clientChoice, onSetPack, open, onTogg
   onSetPack: (offerId: string | null) => Promise<void>;
   open: boolean;
   onToggle: () => void;
-  onPay: (mode: Reservation["paymentMethod"], amount: number | null) => void;
+  onPay: (mode: Reservation["paymentMethod"], amount: number | null, split?: { cash: number; card: number } | null) => void;
   onUnpay: () => void;
   onStatus: (s: QueueStatus) => void;
   onKarts: (map: Record<string, number>) => void;
@@ -331,7 +331,28 @@ function Row({ r, karts, pack, clientCode, clientChoice, onSetPack, open, onTogg
   const amountOk = amountValue != null && Number.isFinite(amountValue) && amountValue >= 0 && amountValue <= 100000;
   // Against the pack's price: a discount (or a supplement) is shown, never silent.
   const priceDiff = amountOk && pack?.total != null ? amountValue! - pack.total : 0;
-  const openCashing = () => { setAmount(pack?.total != null ? String(pack.total) : ""); setPicking(false); setCashing(true); };
+  const openCashing = () => { setAmount(pack?.total != null ? String(pack.total) : ""); setSplitting(false); setPicking(false); setCashing(true); };
+  // Paid two ways: the cash part is typed, the card part follows as the rest of the amount
+  // (and can be typed too). Both parts must be above zero.
+  const [splitting, setSplitting] = useState(false);
+  const [splitCash, setSplitCash] = useState("");
+  const [splitCard, setSplitCard] = useState("");
+  const [cardTyped, setCardTyped] = useState(false);
+  const digitsOnly = (v: string) => v.replace(/\D/g, "");
+  const startSplit = () => {
+    setSplitting(true);
+    setSplitCash("");
+    setSplitCard(amountOk ? String(amountValue) : "");
+    setCardTyped(false);
+  };
+  const cashPart = Number(splitCash || 0);
+  const cardPart = Number(splitCard || 0);
+  const splitOk = cashPart > 0 && cardPart > 0 && cashPart + cardPart <= 100000;
+  const onSplitCash = (v: string) => {
+    const cash = digitsOnly(v);
+    setSplitCash(cash);
+    if (!cardTyped && amountOk) setSplitCard(String(Math.max(0, amountValue! - Number(cash || 0))));
+  };
   const [picking, setPicking] = useState(false);
   const [pickBusy, setPickBusy] = useState(false);
   const pick = async (offerId: string | null) => {
@@ -399,7 +420,8 @@ function Row({ r, karts, pack, clientCode, clientChoice, onSetPack, open, onTogg
                   discount at the counter may have changed. */}
               <strong style={{ display: "block", color: "#d8ff35" }}>{r.paidAmount} DH</strong>
               <span style={{ fontSize: 11, opacity: 0.8 }}>
-                {r.paymentMethod === "Espèces" ? "Espèces" : "Carte"}{pack ? ` · ${pack.label}` : ""}
+                {r.paidSplit ? `Esp. ${r.paidSplit.cash} + Carte ${r.paidSplit.card}` : r.paymentMethod === "Espèces" ? "Espèces" : "Carte"}
+                {pack ? ` · ${pack.label}` : ""}
               </span>
               {pack?.total != null && pack.total !== r.paidAmount && (
                 <em className="fa-pack-was" title="Prix de la formule">tarif {pack.total} DH</em>
@@ -494,12 +516,49 @@ function Row({ r, karts, pack, clientCode, clientChoice, onSetPack, open, onTogg
               {!amountOk && <small style={{ color: "#ff9795", fontSize: 11 }}>Indiquez le montant réellement encaissé.</small>}
             </label>
             <span style={{ fontSize: 12, color: "#8aa0b6" }}>Mode de paiement encaissé :</span>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button type="button" className="fa-cash" style={{ flex: 1 }} disabled={!amountOk}
-                onClick={() => { onPay("Espèces", amountValue); setCashing(false); }}>Espèces{amountOk ? ` · ${amountValue} DH` : ""}</button>
-              <button type="button" className="fa-cash" style={{ flex: 1 }} disabled={!amountOk}
-                onClick={() => { onPay("Carte bancaire", amountValue); setCashing(false); }}>Carte bancaire{amountOk ? ` · ${amountValue} DH` : ""}</button>
-            </div>
+            {!splitting ? (
+              <>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button type="button" className="fa-cash" style={{ flex: 1 }} disabled={!amountOk}
+                    onClick={() => { onPay("Espèces", amountValue); setCashing(false); }}>Espèces{amountOk ? ` · ${amountValue} DH` : ""}</button>
+                  <button type="button" className="fa-cash" style={{ flex: 1 }} disabled={!amountOk}
+                    onClick={() => { onPay("Carte bancaire", amountValue); setCashing(false); }}>Carte bancaire{amountOk ? ` · ${amountValue} DH` : ""}</button>
+                </div>
+                <button type="button" className="fa-split-open" onClick={startSplit}>
+                  Payé en deux fois : une partie en espèces, le reste par carte
+                </button>
+              </>
+            ) : (
+              <div className="fa-split">
+                <label>
+                  <span>Espèces (DH)</span>
+                  <input type="text" inputMode="numeric" autoComplete="off" maxLength={6} value={splitCash} autoFocus
+                    onChange={(e) => onSplitCash(e.target.value)} placeholder="0" />
+                </label>
+                <b>+</b>
+                <label>
+                  <span>Carte (DH)</span>
+                  <input type="text" inputMode="numeric" autoComplete="off" maxLength={6} value={splitCard}
+                    onChange={(e) => { setCardTyped(true); setSplitCard(digitsOnly(e.target.value)); }} placeholder="0" />
+                </label>
+                <b>=</b>
+                <strong>{cashPart + cardPart} DH</strong>
+                {pack?.total != null && splitOk && cashPart + cardPart !== pack.total && (
+                  <small className="fa-split-note">tarif {pack.total} DH · {cashPart + cardPart < pack.total ? `remise ${cashPart + cardPart - pack.total}` : `supplément +${cashPart + cardPart - pack.total}`} DH</small>
+                )}
+                {!splitOk && <small className="fa-split-err">Les deux parts doivent être supérieures à 0.</small>}
+                <div className="fa-split-actions">
+                  <button type="button" className="fa-cash" disabled={!splitOk}
+                    onClick={() => {
+                      onPay(cashPart >= cardPart ? "Espèces" : "Carte bancaire", cashPart + cardPart, { cash: cashPart, card: cardPart });
+                      setCashing(false);
+                    }}>
+                    Valider · {cashPart} DH espèces + {cardPart} DH carte
+                  </button>
+                  <button type="button" className="fa-undo" onClick={() => setSplitting(false)}>Un seul mode</button>
+                </div>
+              </div>
+            )}
             <button type="button" className="fa-undo" onClick={() => setCashing(false)}>Annuler</button>
           </div>
         </div>
@@ -581,7 +640,8 @@ function Row({ r, karts, pack, clientCode, clientChoice, onSetPack, open, onTogg
             {r.paidAt && (
               <p className="fa-hint">
                 Encaissé{typeof r.paidAmount === "number" ? ` ${r.paidAmount} DH` : ""}
-                {r.paymentMethod === "Espèces" ? " en espèces" : " par carte"} à {new Date(r.paidAt).toLocaleTimeString("fr-FR")}
+                {r.paidSplit ? ` (${r.paidSplit.cash} DH en espèces + ${r.paidSplit.card} DH par carte)`
+                  : r.paymentMethod === "Espèces" ? " en espèces" : " par carte"} à {new Date(r.paidAt).toLocaleTimeString("fr-FR")}
                 {r.paidBy ? ` par ${r.paidBy}` : ""}
               </p>
             )}

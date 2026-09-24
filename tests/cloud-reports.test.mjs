@@ -111,3 +111,34 @@ test("the circuit is the drawn one, or the dashboard's default when none is save
   assert.deepEqual(drawn.points[0], { x: 1, y: 2 });
   assert.equal(drawn.start, 1);
 });
+
+test("a payment made two ways is 'mixed', with each part in its own column", () => {
+  const r = R.buildReports([res("MK-1", { status: "PAYEE", paidAt: at(24, 11), paidAmount: 300, paymentMethod: "Espèces", paidSplit: { cash: 200, card: 100 } })], [], NOW);
+  assert.equal(r.payments["MK-1"].method, "mixed");
+  assert.deepEqual([r.payments["MK-1"].cash, r.payments["MK-1"].card], [200, 100]);
+  const day = r.days["2026-09-24"];
+  assert.deepEqual([day.total, day.cash, day.card], [300, 200, 100]);
+  assert.equal(r.reservations["MK-1"].method, "mixed");
+});
+
+test("the Garage for the app: today's fuel from the reading, races and free runs, and the parts", () => {
+  const now = new Date(2026, 8, 24, 20, 0);
+  const s = (h, m = 0) => new Date(2026, 8, 24, h, m).getTime() / 1000;
+  const doc = R.garageDoc({
+    now,
+    fuelFile: { settings: { juniorLph: 2.4, gtLph: 10, juniorKartNumbers: [1], reserveL: 75 },
+                days: [{ date: "2026-09-24", openingL: 100, refillL: 0, measuredAt: new Date(2026, 8, 24, 9, 0).toISOString() }] },
+    garageFile: { parts: [{ id: "a", name: "Plaquettes", stock: 1, minStock: 2, unit: "jeu" }, { id: "b", name: "Bougie", stock: 5, minStock: 2 }],
+                  moves: [{ at: new Date(2026, 8, 24, 19, 0).toISOString(), partName: "Plaquettes", qty: -1, kart: 7, note: "usées" }] },
+    races: [{ raceId: "R", name: "SESSION 1", startedAt: s(18), finishedAt: s(18, 12), savedAt: s(18, 12), durationS: 480,
+              racers: [{ kart: 7, laps: 20 }, { kart: 1, laps: 18 }] }],
+    stints: [{ transponder: "T9", kart: 9, start: s(17), end: s(17, 2), passes: 5 }],
+  });
+  assert.equal(doc.fuelToday.races.length, 1);
+  assert.equal(doc.fuelToday.runs.length, 1);
+  assert.equal(doc.fuelToday.stockL, Math.round((100 - doc.fuelToday.totalL) * 100) / 100);
+  assert.deepEqual(doc.parts.toReorder.map((p) => p.name), ["Plaquettes"]);
+  assert.deepEqual([doc.parts.moves[0].kind, doc.parts.moves[0].kart], ["sortie", 7]);
+  assert.equal(doc.fuelDay.day, "2026-09-24");
+  assert.equal(R.garageDoc({ now, fuelFile: null, garageFile: null, races: [], stints: [] }).parts, null);
+});

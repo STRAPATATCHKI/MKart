@@ -28,7 +28,7 @@ import { ResultSheet } from "@/components/results/result-sheet";
 import { useBridgeSessionSync, type BridgeSync } from "@/hooks/use-bridge-sync";
 import { useSignups } from "@/hooks/use-signups";
 import { SignupPanel } from "@/components/signups/signup-panel";
-import { FuelView } from "@/components/fuel/fuel-view";
+import { GarageView } from "@/components/garage/garage-view";
 import { signupPlayers, type Signup } from "@/lib/bridge-client";
 import { DriverAvatar } from "@/components/big-screen/driver-avatar";
 import { useTiming } from "@/hooks/use-timing";
@@ -41,9 +41,9 @@ type DriverRow = { name: string; kart: string; transponder: string; color?: numb
 import { SOUVENIR_HASH_PREFIX } from "@/lib/race-souvenir";
 import {
   Activity, Banknote, Bell, CalendarDays, CheckCircle2,
-  ChevronRight, Clock3, CreditCard, Crosshair, Flag, Fuel, LayoutDashboard, Menu, MonitorPlay, MoreHorizontal,
+  ChevronRight, Clock3, CreditCard, Crosshair, Flag, LayoutDashboard, Menu, MonitorPlay, MoreHorizontal,
   PackageCheck, Pencil, PlusCircle, QrCode, Radio, RotateCcw, Save, Search,
-  Trash2, Trophy, Undo2, UsersRound, WalletCards, X, Zap,
+  Trash2, Trophy, Undo2, UsersRound, WalletCards, Wrench, X, Zap,
 } from "lucide-react";
 
 import { useQueue } from "@/hooks/use-queue";
@@ -59,7 +59,7 @@ const navItems = [
   { label: "Clients", icon: UsersRound },
   { label: "Pass & fidélité", icon: WalletCards },
   { label: "Packs & ventes", icon: PackageCheck },
-  { label: "Carburant", icon: Fuel },
+  { label: "Garage", icon: Wrench },
   { label: "Rapports", icon: Activity },
 ];
 
@@ -1141,7 +1141,9 @@ const PAGE_SLUGS: Array<[string, string]> = [
   ["Clients", "clients"],
   ["Pass & fidélité", "pass"],
   ["Packs & ventes", "packs"],
-  ["Carburant", "carburant"],
+  ["Garage", "garage"],
+  // The page's old name: a bookmark to #/carburant still opens it.
+  ["Garage", "carburant"],
   ["Rapports", "rapports"],
 ];
 const slugForPage = (label: string) => PAGE_SLUGS.find(([page]) => page === label)?.[1] ?? "accueil";
@@ -1256,7 +1258,7 @@ export default function Home() {
       <div className="workspace">
         <Topbar openMenu={() => setMobileOpen(true)} search={search} setSearch={setSearch} />
         <main className="dashboard-content">
-          {active === "Course en direct" ? <LiveRaceView /> : active === "Liste d\u2019attente" ? <FileAttenteView search={search} /> : active === "Sessions" ? <SessionsView bridgeSync={bridgeSync} /> : active === "Statistiques" ? <StatsView /> : active === "Réservations" ? <ReservationsView search={search} /> : active === "Clients" ? <ClientsView search={search} /> : active === "Pass & fidélité" ? <PassLoyaltyView /> : active === "Packs & ventes" ? <PacksSalesView /> : active === "Carburant" ? <FuelView /> : active === "Rapports" ? <ReportsView /> : <Overview search={search} onOpenQueue={() => navigateToPage("Liste d’attente")} />}
+          {active === "Course en direct" ? <LiveRaceView /> : active === "Liste d\u2019attente" ? <FileAttenteView search={search} /> : active === "Sessions" ? <SessionsView bridgeSync={bridgeSync} /> : active === "Statistiques" ? <StatsView /> : active === "Réservations" ? <ReservationsView search={search} /> : active === "Clients" ? <ClientsView search={search} /> : active === "Pass & fidélité" ? <PassLoyaltyView /> : active === "Packs & ventes" ? <PacksSalesView /> : active === "Garage" ? <GarageView /> : active === "Rapports" ? <ReportsView /> : <Overview search={search} onOpenQueue={() => navigateToPage("Liste d’attente")} />}
         </main>
       </div>
       <PageTransitionLoader visible={pageLoading} />

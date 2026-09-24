@@ -150,6 +150,16 @@ export const timing = {
 
   races: async () => (await call<{ success: true; races: TimingSavedRaceSummary[] }>("GET", "/api/races")).races,
 
+  /**
+   * Karts that went round outside a race on a day (tests, warm-ups), for the fuel they burned.
+   * Null when this Timing Control predates the activity log (it answers 404): restart it.
+   */
+  activity: async (day: string) => {
+    const res = await call<{ success: boolean; stints?: { transponder: string; kart: number | null; start: number; end: number; passes: number }[] }>(
+      "GET", `/api/activity/${encodeURIComponent(day)}`);
+    return res.success && Array.isArray(res.stints) ? res.stints : null;
+  },
+
   /** One saved race with its laps. Answers 404 with a body, so the refusal is read, not guessed. */
   race: async (raceId: string) => {
     const res = await call<

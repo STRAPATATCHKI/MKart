@@ -45,6 +45,8 @@ export type Reservation = {
   paidBy: string | null;
   /** Dirhams actually collected. Null on reservations cashed before amounts were recorded. */
   paidAmount?: number | null;
+  /** When the client paid two ways: the cash part and the card part (their sum is paidAmount). */
+  paidSplit?: { cash: number; card: number } | null;
   /** In the bin (status SUPPRIMEE): when, by whom, and the status "Restaurer" puts back. */
   deletedAt?: string | null;
   deletedBy?: string | null;
@@ -75,7 +77,8 @@ export type QueueView = {
   error: string | null;
   lastSync: string | null;
   refresh: () => Promise<void>;
-  pay: (code: string, mode: Reservation["paymentMethod"], by: string, amount: number | null) => Promise<void>;
+  pay: (code: string, mode: Reservation["paymentMethod"], by: string, amount: number | null,
+        split?: { cash: number; card: number } | null) => Promise<void>;
   unpay: (code: string) => Promise<void>;
   setStatus: (code: string, status: QueueStatus) => Promise<void>;
   assignKarts: (code: string, karts: Record<string, number>, sessionId?: string) => Promise<void>;
@@ -150,7 +153,8 @@ export function useQueue(pollMs = 4000): QueueView {
     error,
     lastSync,
     refresh,
-    pay: useCallback((code, mode, by, amount) => act(code, "paiement", { mode, par: by, montant: amount }), [act]),
+    pay: useCallback((code, mode, by, amount, split) => act(code, "paiement",
+      { mode, par: by, montant: amount, ...(split ? { especes: split.cash, carte: split.card } : {}) }), [act]),
     unpay: useCallback((code) => act(code, "annuler-paiement", {}), [act]),
     setStatus: useCallback((code, statut) => act(code, "statut", { statut }), [act]),
     assignKarts: useCallback((code, karts, sessionId) => act(code, "karts", { karts, sessionId }), [act]),

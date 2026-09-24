@@ -50,7 +50,7 @@
 .fuel-input-row { display: flex; gap: 8px; }
 .fuel-input-row input { flex: 1; min-width: 0; }
 .fuel-input-row .primary-button, .fuel-input-row .secondary-button { height: 44px; flex: 0 0 auto; }
-.fuel-readout { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 2px 0 0; padding: 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: #0c110c; }
+.fuel-readout { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 2px 0 0; padding: 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: #0c110c; }
 .fuel-readout div { display: grid; gap: 3px; }
 .fuel-readout dt { color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .fuel-readout dd { margin: 0; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -109,3 +109,75 @@
 @media (prefers-reduced-motion: reduce) {
   .fb-liquid, .fb-wave, .fb-bubble, .fuel-bars i, .fuel-kart-bar i { animation: none !important; transition: none !important; }
 }
+
+/* Garage: tabs, the fuel of each real race, and the spare-parts shelf. */
+.garage-tabs { margin: 4px 0 16px; width: fit-content; }
+.garage-tabs button { display: inline-flex; align-items: center; gap: 6px; }
+.fuel-toolbar { display: flex; justify-content: flex-end; margin: -6px 0 12px; }
+.fuel-alert--info { border-color: rgba(216,255,53,.35); background: rgba(216,255,53,.06); color: #d7dccf; }
+.fuel-alert--info svg { color: var(--lime); }
+.fuel-field--wide { grid-column: 1 / -1; }
+
+.fuel-races { margin: 0 0 14px; padding: 0; list-style: none; display: grid; gap: 6px; max-height: 240px; overflow-y: auto; }
+.fuel-races li { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 9px 11px;
+  border: 1px solid var(--line-soft); border-radius: 9px; background: #0c110c; font-size: 12px; }
+.fuel-races li.is-before { opacity: .55; }
+.fuel-races time { color: var(--muted); font-weight: 800; font-variant-numeric: tabular-nums; }
+.fuel-races b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fuel-races span { color: var(--muted); white-space: nowrap; }
+.fuel-races strong { color: #f5b83d; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.parts-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 16px 0 8px; }
+.parts-toolbar .fa-filters { flex-wrap: wrap; }
+.parts-search { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #0c110c; color: var(--muted); }
+.parts-search input { width: 150px; border: 0; background: transparent; color: var(--text, #f4f6ed); font: inherit; font-size: 13px; outline: none; }
+.parts-toolbar .primary-button { margin-left: auto; }
+.parts-status { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.parts-status.is-bad { color: #ff9795; }
+.parts-status.is-warn { color: #f5b83d; }
+
+.parts-list { padding: 6px; }
+.parts-row { display: grid; grid-template-columns: minmax(0, 2fr) 130px 110px 90px 290px; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 9px; }
+.parts-head { color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .14em; }
+.parts-item + .parts-item .parts-row { border-top: 1px solid var(--line-soft); border-radius: 0; }
+.parts-row.is-low { background: rgba(255,107,105,.06); }
+.parts-name b, .parts-name small { display: block; }
+.parts-name b { font-size: 14px; }
+.parts-name small { margin-top: 2px; color: var(--muted); font-size: 11px; }
+.parts-stock { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+.parts-stock strong { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.parts-stock small { color: var(--muted); font-size: 11px; }
+.parts-stock em { flex-basis: 100%; color: #ff9795; font-size: 10px; font-weight: 800; font-style: normal; letter-spacing: .06em; text-transform: uppercase; }
+.parts-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.parts-actions button { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px;
+  background: #121815; color: #dce3df; font: inherit; font-size: 12px; cursor: pointer; }
+.parts-actions button:hover:not(:disabled) { border-color: var(--lime); }
+.parts-actions button:disabled { opacity: .4; cursor: default; }
+.parts-actions button.is-danger:hover { border-color: #ff6b69; color: #ff9795; }
+.parts-move { display: grid; grid-template-columns: auto 120px 110px minmax(0, 1fr); align-items: end; gap: 10px; margin: 0 12px 12px; padding: 12px;
+  border: 1px solid rgba(216,255,53,.35); border-radius: 10px; background: rgba(216,255,53,.05); }
+.parts-move > b { grid-column: 1 / -1; font-size: 13px; }
+.parts-move label { display: grid; gap: 4px; }
+.parts-move label span { color: var(--muted); font-size: 11px; }
+.parts-move input { height: 38px; padding: 0 10px; border: 1px solid #26303d; border-radius: 8px; background: #0e1520; color: #e8eef5; font: inherit; font-size: 15px; font-weight: 700; }
+.parts-move-note { grid-column: span 2; }
+.parts-move-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
+.parts-log { margin-top: 16px; }
+.parts-log ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.parts-log li { display: grid; grid-template-columns: 120px 50px minmax(0, 1.4fr) 80px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 10px; border-top: 1px solid var(--line-soft); font-size: 12px; }
+.parts-log time { color: var(--muted); }
+.parts-log li.is-in b { color: var(--lime); }
+.parts-log li.is-out b { color: #f5b83d; }
+.parts-log small { color: var(--muted); }
+.parts-empty { margin: 0; padding: 14px; color: var(--muted); font-size: 13px; }
+@media (max-width: 900px) {
+  .parts-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .parts-head { display: none; }
+  .parts-move { grid-template-columns: 1fr 1fr; }
+}
+
+/* Karts going round outside a race. */
+.fuel-runs-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 4px 0 8px; }
+.fuel-runs-head span { color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .16em; }
+.fuel-runs-head small { color: var(--muted); font-size: 11px; }
+.fuel-races--runs strong { color: #8ad7ff; }

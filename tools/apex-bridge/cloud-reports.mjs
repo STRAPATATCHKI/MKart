@@ -3,6 +3,8 @@
 //   every 30 s   payments, day totals, recent reservations, today's summary  <- the desk (/api/queue)
 //                every race saved since the last round                        <- Timing Control (/api/races)
 //                the circuit as drawn on the dashboard                        <- the desk (/api/track)
+//                the Garage: today's fuel, spare parts                        <- the desk (/api/fuel,
+//                                                                                /api/garage) and the chrono
 //   every 2 s    the race on track, while one is prepared or running          <- Timing Control (/api/race/current)
 //
 // Only what changed is sent, in one multi-path update per round. Runs inside the bridge because
@@ -14,7 +16,8 @@
 
 import fs from "node:fs";
 import { cloudConfigured, cloudGet, cloudPatch, cloudPut } from "./cloud.mjs";
-import { buildReports, diffUpdates, isSimulated, liveDoc, raceDoc, trackDoc } from "./report-docs.mjs";
+import { buildReports, diffUpdates, garageDoc, isSimulated, liveDoc, raceDoc, trackDoc } from "./report-docs.mjs";
+import { fuelDayKey } from "../../lib/fuel-rules.mjs";
 
 const DESK_EVERY_MS = 30_000;
 const LIVE_EVERY_MS = 2_000;
@@ -54,6 +57,9 @@ export function startReportSync({ deskUrl, timingUrl = "http://127.0.0.1:8795", 
   let primed = false;
   let todayFp = null;
   let trackFp = null;
+  const garageFp = {};
+  // Saved races do not change: their laps are fetched once, for today's fuel.
+  const raceDetails = new Map();
   let liveFp = null;
   let liveActive = false;
   let lastPushAt = 0;
@@ -124,11 +130,45 @@ export function startReportSync({ deskUrl, timingUrl = "http://127.0.0.1:8795", 
           try {
             const detail = (await getJson(`${timingUrl}/api/races/${encodeURIComponent(summary.raceId)}`)).race;
             if (!detail) continue;
+            raceDetails.set(summary.raceId, detail);
             updates[`races/${summary.raceId}`] = raceDoc(detail);
             sentNow[summary.raceId] = fp;
           } catch { /* this race next round */ }
         }
         accepted.push(() => { Object.assign(racesSent, sentNow); if (Object.keys(sentNow).length) saveState(); });
+      }
+
+      // ---- the Garage: today's fuel and the spare parts
+      try {
+        const today = fuelDayKey(Date.now());
+        const todays = [];
+        for (const summary of Array.isArray(list) ? list : []) {
+          const when = (summary.finishedAt ?? summary.startedAt ?? summary.savedAt ?? 0) * 1000;
+          if (!summary.raceId || isSimulated(summary) || fuelDayKey(when) !== today) continue;
+          if (!raceDetails.has(summary.raceId)) {
+            try {
+              const detail = (await getJson(`${timingUrl}/api/races/${encodeURIComponent(summary.raceId)}`)).race;
+              if (detail) raceDetails.set(summary.raceId, detail);
+            } catch { /* next round */ }
+          }
+          if (raceDetails.has(summary.raceId)) todays.push(raceDetails.get(summary.raceId));
+        }
+        const [fuelFile, garageFile, activity] = await Promise.all([
+          getJson(`${deskUrl}/api/fuel`).catch(() => null),
+          getJson(`${deskUrl}/api/garage`).catch(() => null),
+          getJson(`${timingUrl}/api/activity/${today}`).catch(() => null),   // an older chrono has none
+        ]);
+        const doc = garageDoc({ fuelFile, garageFile, races: todays, stints: (activity && activity.stints) || [] });
+        const pieces = { "garage/fuel/today": doc.fuelToday, [`garage/fuel/days/${today}`]: doc.fuelDay };
+        if (doc.parts) pieces["garage/parts"] = doc.parts;
+        for (const [path, value] of Object.entries(pieces)) {
+          const fp = JSON.stringify(value);
+          if (garageFp[path] === fp) continue;
+          updates[path] = path === "garage/fuel/today" ? { ...value, updatedAt: Date.now() } : value;
+          accepted.push(() => { garageFp[path] = fp; });
+        }
+      } catch (e) {
+        warnOnce(`garage:${e.message}`, `[rapports] garage non envoyé : ${e.message}`);
       }
 
       const changed = Object.keys(updates).length;

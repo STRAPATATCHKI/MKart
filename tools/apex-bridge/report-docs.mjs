@@ -8,6 +8,8 @@
 // go - a race without its drivers, or a payment without its payer, is not much of a report -
 // and the rules let only accounts listed under /staff read any of it.
 
+import { dayFuel, fuelDayKey, liveFuelStock } from "../../lib/fuel-rules.mjs";
+
 const PAID = new Set(["PAYEE", "EN_PISTE", "TERMINEE"]);
 /** Reservations are sent for this many days; payments, day totals and races are kept for good. */
 export const RESERVATION_DAYS = 30;
@@ -56,18 +58,23 @@ export function buildReports(reservations, signups, now = new Date()) {
         pilots: pilots.length, pilotNames: pilots.map((p) => p.fullName).filter(Boolean),
         pack, expectedAmount: expected,
         paidAt: paid ? ms(r.paidAt) : null, paidAmount: amount,
-        method: paid ? methodOf(r.paymentMethod) : null,
+        method: paid ? (exact && r.paidSplit ? "mixed" : methodOf(r.paymentMethod)) : null,
       };
     }
 
     if (!paid) continue;
     const day = dayKey(r.paidAt);
     if (!day) continue;
-    const method = methodOf(r.paymentMethod);
+    // Paid two ways (part cash, part card): method "mixed", and each part in its own column.
+    const split = exact && r.paidSplit && r.paidSplit.cash > 0 && r.paidSplit.card > 0 ? r.paidSplit : null;
+    const method = split ? "mixed" : methodOf(r.paymentMethod);
+    const cashPart = amount == null ? null : split ? split.cash : method === "cash" ? amount : 0;
+    const cardPart = amount == null ? null : split ? split.card : method === "cash" ? 0 : amount;
     payments[r.code] = {
       code: r.code, day, paidAt: ms(r.paidAt),
       amount: amount ?? null, estimated: !exact && amount != null,
-      method, methodLabel: r.paymentMethod || null, by: r.paidBy || null,
+      method, methodLabel: split ? "Espèces + Carte bancaire" : r.paymentMethod || null,
+      cash: cashPart, card: cardPart, by: r.paidBy || null,
       pack, pilots: pilots.length, contactName: r.contactName || "", channel: r.channel || null, status: r.status,
     };
     const d = days[day] || (days[day] = { day, total: 0, cash: 0, card: 0, count: 0, pilots: 0, estimated: 0, unknown: 0 });
@@ -75,7 +82,8 @@ export function buildReports(reservations, signups, now = new Date()) {
     d.pilots += pilots.length;
     if (amount == null) { d.unknown += 1; continue; }
     d.total += amount;
-    if (method === "cash") d.cash += amount; else d.card += amount;
+    d.cash += cashPart;
+    d.card += cardPart;
     if (!exact) d.estimated += 1;
   }
 
@@ -188,4 +196,54 @@ export function diffUpdates(prefix, desired, pushed) {
   }
   for (const id of pushed.keys()) if (!(id in desired)) updates[`${prefix}/${id}`] = null;
   return { updates, fingerprints };
+}
+
+// ------------------------------------------------------------------------------ garage
+
+const FUEL_DEFAULTS = { capacityL: 500, juniorLph: 2.4, gtLph: 10, reserveL: 75, juniorKartNumbers: [] };
+
+/**
+ * The Garage for the app: the fuel of the day (the morning reading, then every race and every
+ * kart that went round outside a race since, at the JUNIOR or GT rate - lib/fuel-rules.mjs, the
+ * same rules as the dashboard), and the spare parts (the shelf, what to reorder, what went on
+ * which kart). `fuelFile` and `garageFile` are the desk's fuel.json and garage.json.
+ */
+export function garageDoc({ fuelFile, garageFile, races, stints, now = new Date() }) {
+  const settings = { ...FUEL_DEFAULTS, ...((fuelFile && fuelFile.settings) || {}) };
+  if (!Array.isArray(settings.juniorKartNumbers)) settings.juniorKartNumbers = [];
+  const day = fuelDayKey(now.getTime());
+  const fuel = dayFuel(races || [], stints || [], settings, day);
+  const reading = ((fuelFile && fuelFile.days) || []).find((d) => d && d.date === day) || null;
+  const { stockL, burnedL } = liveFuelStock(reading, fuel);
+  const fuelToday = {
+    day,
+    readingL: reading ? reading.openingL : null, refillL: reading ? reading.refillL || 0 : 0,
+    measuredAt: reading && reading.measuredAt ? Date.parse(reading.measuredAt) : null,
+    stockL: reading ? stockL : null, burnedSinceReadingL: burnedL,
+    capacityL: settings.capacityL, reserveL: settings.reserveL, low: reading ? stockL <= settings.reserveL : false,
+    racesL: fuel.racesL, freeRunsL: fuel.freeL, totalL: fuel.totalL,
+    races: fuel.races.map((r) => ({ raceId: r.raceId, name: r.name, at: r.at, minutes: r.minutes, juniorKarts: r.juniorKarts, gtKarts: r.gtKarts, litres: r.litres })),
+    runs: fuel.runs.map((r) => ({ kart: r.kart, transponder: r.transponder, start: r.start, end: r.end, passes: r.passes, minutes: r.minutes, litres: r.litres })),
+  };
+  const fuelDay = { day, racesL: fuel.racesL, freeRunsL: fuel.freeL, totalL: fuel.totalL, races: fuel.races.length, runs: fuel.runs.length };
+
+  let parts = null;
+  if (garageFile && Array.isArray(garageFile.parts)) {
+    const items = garageFile.parts.filter((x) => x && x.name).map((x) => ({
+      id: x.id, name: x.name, category: x.category || "autre", fits: x.fits || "tous", unit: x.unit || "pièce",
+      stock: Number(x.stock) || 0, minStock: Number(x.minStock) || 0, low: (Number(x.stock) || 0) <= (Number(x.minStock) || 0),
+      unitPrice: x.unitPrice ?? null,
+    }));
+    parts = {
+      items,
+      toReorder: items.filter((x) => x.low).sort((a, b) => (a.stock - a.minStock) - (b.stock - b.minStock))
+        .map((x) => ({ name: x.name, stock: x.stock, minStock: x.minStock, unit: x.unit })),
+      moves: (garageFile.moves || []).slice(0, 100).filter((m) => m && m.qty).map((m) => ({
+        at: Date.parse(m.at) || null, part: m.partName || "", qty: m.qty, kind: m.qty > 0 ? "entree" : "sortie",
+        kart: m.kart ?? null, note: m.note || "", by: m.by || null,
+      })),
+      savedAt: garageFile.savedAt ? Date.parse(garageFile.savedAt) : null,
+    };
+  }
+  return { fuelToday, fuelDay, parts };
 }
