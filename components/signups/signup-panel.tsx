@@ -96,6 +96,15 @@ export function SignupPanel({ signups, formUrl, state, onAdd, onArchive }: Signu
                   <div className="signup-identity">
                     <strong>{signup.name}{players.length > 1 ? ` + ${players.length - 1}` : ""}</strong>
                     <small>{signup.age} ans · {signup.phone}{signup.email ? ` · ${signup.email}` : ""}</small>
+                    {signup.packLabel ? (
+                      <small style={{ color: "#d8ff35", fontWeight: 700 }}>
+                        {signup.packLabel}
+                        {signup.packTotalMad != null ? ` · ${signup.packTotalMad} DH à encaisser` : ""}
+                        {signup.packBasis === "groupe" ? " (forfait groupe)"
+                          : signup.packPriceMad != null && players.length > 1
+                          ? ` (${signup.packPriceMad} DH × ${players.length})` : ""}
+                      </small>
+                    ) : null}
                     <ul className="signup-players">
                       {players.map((player, index) => {
                         const category = kartCategory(player);
@@ -129,8 +138,13 @@ export function SignupPanel({ signups, formUrl, state, onAdd, onArchive }: Signu
                       type="button"
                       className="primary-button"
                       onClick={() => onAdd(signup)}
-                      disabled={payment.state === "unpaid"}
-                      title={payment.state === "unpaid" ? "Encaissez d’abord dans la Liste d’attente" : undefined}
+                      // Paid is the ONLY state that unlocks a kart. "absent" (a QR sign-up the caisse never
+                      // received) used to slip through here; a client who has not been validated at the
+                      // desk must not reach the grid, whatever the reason the caisse does not know them.
+                      disabled={!payment.paid}
+                      title={payment.state === "unpaid" ? "Encaissez d’abord dans la Liste d’attente"
+                        : payment.state === "absent" ? "Inscription non validée à la caisse : passez-la en Liste d’attente (encaisser), puis ajoutez-la"
+                        : undefined}
                     >
                       <UserPlus size={14} /> Ajouter {players.length > 1 ? `les ${players.length}` : ""}
                     </button>

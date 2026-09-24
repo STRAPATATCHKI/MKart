@@ -17,24 +17,43 @@ export type SouvenirDriver = {
 
 export type SouvenirKind = "race" | "simulation";
 
+/**
+ * The records at the time of the race, for the comparison bars lower down the page: the best
+ * lap of that day at the venue, and the all-time track record. Absent on links made before
+ * records travelled with them.
+ */
+export type SouvenirRecords = {
+  dayBestMs: number | null;
+  dayBestBy: string | null;
+  recordMs: number | null;
+  recordBy: string | null;
+};
+
 export type RaceSouvenir = {
   id: string;
   finishedAt: string; // ISO date
   kind: SouvenirKind;
   track: string;
   drivers: SouvenirDriver[]; // classification order, P1 first
+  records?: SouvenirRecords | null;
 };
 
 const VERSION = 1;
 export const SOUVENIR_HASH_PREFIX = "#souvenir=";
+// /s, not the root: the root of the public site is the inscription form. /s serves the app
+// bundle, whose only public job is this page.
 const PUBLIC_SITE_URL =
   (typeof import.meta !== "undefined" && (import.meta as { env?: Record<string, string> }).env?.VITE_PUBLIC_SITE_URL) ||
-  "https://mega-karts.web.app";
+  "https://mega-karts.web.app/s";
 
 // Driver tuple: [name, kart, laps, bestLapMs, totalTimeMs, pilot?] — -1 means "unknown". The pilot
 // is appended last so links made before pilots existed still decode.
 type PackedDriver = [string, string, number, number, number, number?];
-type Packed = [number, string, number, 0 | 1, string, PackedDriver[]];
+// Records: [dayBestMs, dayBestBy, recordMs, recordBy], -1 / "" when unknown. Appended after the
+// drivers, so a link made before it existed decodes exactly as before, and a page that predates
+// it simply ignores the extra element - no version change needed.
+type PackedRecords = [number, string, number, string];
+type Packed = [number, string, number, 0 | 1, string, PackedDriver[], PackedRecords?];
 
 const toBase64Url = (bytes: Uint8Array) => {
   let binary = "";
@@ -61,6 +80,10 @@ export async function encodeSouvenir(souvenir: RaceSouvenir): Promise<string> {
     souvenir.track,
     souvenir.drivers.map((d): PackedDriver => [d.name, d.kart, d.laps, d.bestLapMs ?? -1, d.totalTimeMs ?? -1, d.pilot ?? -1]),
   ];
+  const r = souvenir.records;
+  if (r && (r.dayBestMs != null || r.recordMs != null)) {
+    packed.push([r.dayBestMs ?? -1, r.dayBestBy ?? "", r.recordMs ?? -1, r.recordBy ?? ""]);
+  }
   const json = new TextEncoder().encode(JSON.stringify(packed));
   if (typeof CompressionStream !== "undefined") {
     try {
@@ -83,7 +106,13 @@ export async function decodeSouvenir(token: string): Promise<RaceSouvenir> {
   }
   const packed = JSON.parse(new TextDecoder().decode(bytes)) as Packed;
   if (!Array.isArray(packed) || packed[0] !== VERSION) throw new Error("Lien de souvenir invalide.");
-  const [, id, finishedAtSec, kind, track, drivers] = packed;
+  const [, id, finishedAtSec, kind, track, drivers, recs] = packed;
+  const records: SouvenirRecords | null = Array.isArray(recs)
+    ? {
+        dayBestMs: recs[0] >= 0 ? recs[0] : null, dayBestBy: recs[1] || null,
+        recordMs: recs[2] >= 0 ? recs[2] : null, recordBy: recs[3] || null,
+      }
+    : null;
   return {
     id,
     finishedAt: new Date(finishedAtSec * 1000).toISOString(),
@@ -97,6 +126,8 @@ export async function decodeSouvenir(token: string): Promise<RaceSouvenir> {
       totalTimeMs: total < 0 ? null : total,
       pilot: pilot == null || pilot < 0 ? null : pilot,
     })),
+    // Only when the link carries them: an older link decodes exactly as it always did.
+    ...(records ? { records } : {}),
   };
 }
 

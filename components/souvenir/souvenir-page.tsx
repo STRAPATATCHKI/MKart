@@ -3,7 +3,9 @@
 // Player-facing race souvenir, opened on a phone by scanning the QR code shown at the end of a
 // race. Everything it shows comes from the link itself (see lib/race-souvenir.ts).
 import { useEffect, useMemo, useState } from "react";
-import { Check, Flag, Share2, Timer, Trophy, UsersRound, Zap } from "lucide-react";
+import { Check, Flag, ImageDown, Share2, Timer, Trophy, UsersRound, Zap } from "lucide-react";
+import { renderStoryCard, shareStory } from "./story-card";
+import { RecordBars } from "./record-bars";
 import { DriverAvatar } from "@/components/big-screen/driver-avatar";
 import { Lockup } from "@/components/big-screen/lockup";
 import { fmtLap } from "@/components/big-screen/race-simulation";
@@ -39,6 +41,7 @@ export function SouvenirPage({ token }: { token: string }) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [pick, setPick] = useState<number | null>(null);
   const [shared, setShared] = useState<"idle" | "copied">("idle");
+  const [story, setStory] = useState<"idle" | "drawing" | "downloaded" | "failed">("idle");
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +113,23 @@ export function SouvenirPage({ token }: { token: string }) {
     }
   };
 
+  // The story: an image, because that is the only thing that goes into a story. Drawn on the
+  // phone, handed to the share sheet as a file - Instagram, WhatsApp and the camera roll all
+  // take it from there. Every story is a customer showing their friends where they raced.
+  const shareAsStory = async () => {
+    if (story === "drawing") return;
+    setStory("drawing");
+    try {
+      const blob = await renderStoryCard({ race, pick, fmtLap });
+      if (!blob) { setStory("failed"); return; }
+      const outcome = await shareStory(blob, `megakart-${race.id}.png`);
+      setStory(outcome === "downloaded" ? "downloaded" : outcome === "failed" ? "failed" : "idle");
+    } catch {
+      setStory("failed");
+    }
+    window.setTimeout(() => setStory("idle"), 3000);
+  };
+
   return (
     <main className="sv">
       <header className="sv-head">
@@ -158,8 +178,14 @@ export function SouvenirPage({ token }: { token: string }) {
             </dl>
             {stats.fastest === me && <p className="sv-badge"><Zap aria-hidden="true" /> Meilleur tour de la course</p>}
           </div>
-          <button type="button" className="sv-share" onClick={share}>
-            {shared === "copied" ? <><Check aria-hidden="true" /> Lien copié</> : <><Share2 aria-hidden="true" /> Partager mon résultat</>}
+          <button type="button" className="sv-share sv-share--story" onClick={shareAsStory} disabled={story === "drawing"}>
+            {story === "drawing" ? <><Timer aria-hidden="true" /> Préparation de l’image…</>
+              : story === "downloaded" ? <><Check aria-hidden="true" /> Image enregistrée</>
+              : story === "failed" ? <>Réessayer</>
+              : <><ImageDown aria-hidden="true" /> Partager en story</>}
+          </button>
+          <button type="button" className="sv-share sv-share--ghost" onClick={share}>
+            {shared === "copied" ? <><Check aria-hidden="true" /> Lien copié</> : <><Share2 aria-hidden="true" /> Envoyer le lien</>}
           </button>
         </section>
       ) : (
@@ -186,10 +212,20 @@ export function SouvenirPage({ token }: { token: string }) {
       </section>
 
       {!me && (
-        <button type="button" className="sv-share sv-share--wide" onClick={share}>
-          {shared === "copied" ? <><Check aria-hidden="true" /> Lien copié</> : <><Share2 aria-hidden="true" /> Partager les résultats</>}
-        </button>
+        <div className="sv-share-row">
+          <button type="button" className="sv-share sv-share--story" onClick={shareAsStory} disabled={story === "drawing"}>
+            {story === "drawing" ? <><Timer aria-hidden="true" /> Préparation…</>
+              : story === "downloaded" ? <><Check aria-hidden="true" /> Image enregistrée</>
+              : <><ImageDown aria-hidden="true" /> Partager en story</>}
+          </button>
+          <button type="button" className="sv-share sv-share--ghost" onClick={share}>
+            {shared === "copied" ? <><Check aria-hidden="true" /> Lien copié</> : <><Share2 aria-hidden="true" /> Envoyer le lien</>}
+          </button>
+        </div>
       )}
+
+      {/* On the page only, never in the story image: scroll down to see what to chase. */}
+      <RecordBars race={race} me={me} fastest={stats.fastest} fmtLap={fmtLap} />
 
       <footer className="sv-foot">
         <span>Chronométrage officiel {race.track}</span>

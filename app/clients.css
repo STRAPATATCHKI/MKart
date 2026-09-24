@@ -1,0 +1,75 @@
+/* ---------------------------------------------------------------------------------------
+   CLIENTS — the directory and each client's results. Reuses the page frame of the old
+   "clients passés" view (hero, KPI strip) and adds the list and the race detail.
+   --------------------------------------------------------------------------------------- */
+.cl-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
+.cl-filters button { height: 32px; padding: 0 12px; border: 1px solid #26303d; border-radius: 99px; background: #0e1520;
+  color: #cfd8d2; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.cl-filters button.is-on { border-color: var(--lime); background: rgba(216,255,53,.1); color: var(--lime); }
+.cl-search-note { margin-left: 6px; font-size: 12px; color: #8aa0b6; }
+
+.cl-list { display: grid; gap: 6px; }
+.cl-row { width: 100%; display: grid; grid-template-columns: 22px minmax(180px, 2fr) minmax(150px, 1.4fr) 1fr .8fr .6fr 1fr;
+  align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid #1d2420; border-radius: 8px; background: #0d110f;
+  color: #dce3df; font: inherit; text-align: left; cursor: pointer; }
+.cl-row:hover { border-color: #2f3a33; }
+.cl-row.is-open { border-color: var(--lime); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.cl-row > span { display: grid; gap: 2px; min-width: 0; }
+.cl-row strong { font-size: 13px; color: #eef3ea; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-row small { font-size: 11px; color: #8aa0b6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-head { cursor: default; padding-top: 4px; padding-bottom: 4px; border: 0; background: transparent;
+  font-size: 10px; font-weight: 900; letter-spacing: .12em; color: #8aa0b6; }
+.cl-head:hover { border: 0; }
+.cl-chev { color: #8aa0b6; }
+.cl-who { display: flex !important; align-items: center; gap: 10px; }
+.cl-who > span { display: grid; gap: 2px; min-width: 0; }
+.cl-initial { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%;
+  background: #1b2230; color: #cfd8d2; font-style: normal; font-weight: 800; font-size: 13px; }
+.cl-best strong, td.cl-best { color: var(--lime) !important; font-family: ui-monospace, monospace; }
+.cl-empty { margin: 8px 0; font-size: 13px; color: #8aa0b6; }
+
+.cl-detail { margin-top: -6px; padding: 14px 16px 16px; border: 1px solid var(--lime); border-top: 0;
+  border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; background: #0a0d0b; display: grid; gap: 16px; }
+.cl-warn { margin: 0; padding: 8px 10px; border-left: 3px solid #e3b341; background: rgba(227,179,65,.08); font-size: 12px; color: #f0d49a; }
+.cl-block h4 { margin: 0 0 8px; font-size: 10px; font-weight: 900; letter-spacing: .16em; color: #8aa0b6; text-transform: uppercase; }
+
+.cl-races { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cl-races th { padding: 6px 8px; text-align: left; font-size: 9px; font-weight: 900; letter-spacing: .12em; color: #8aa0b6; border-bottom: 1px solid #1d2420; }
+.cl-races td { padding: 8px; vertical-align: top; color: #dce3df; border-bottom: 1px solid #141a17; }
+.cl-races td small { display: block; color: #8aa0b6; font-size: 10px; }
+.cl-p1 { color: var(--lime) !important; font-weight: 800; }
+.cl-partial { margin-left: 6px; padding: 1px 5px; border-radius: 3px; background: #e3b341; color: #0d0f08; font-size: 8px; font-weight: 900; font-style: normal; }
+.cl-laps { display: flex; flex-wrap: wrap; gap: 4px; }
+.cl-laps span { padding: 2px 6px; border-radius: 4px; background: #121815; font-family: ui-monospace, monospace; font-size: 11px; color: #cfd8d2; }
+.cl-laps span.is-best { background: rgba(216,255,53,.14); color: var(--lime); font-weight: 800; }
+
+.cl-signups { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.cl-signups li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; color: #cfd8d2; }
+.cl-signups b { font-family: ui-monospace, monospace; color: var(--lime); }
+.cl-signups span { color: #8aa0b6; }
+.cl-queue { padding: 1px 6px; border: 1px solid #26303d; border-radius: 4px; font-family: ui-monospace, monospace; color: #cfd8d2 !important; }
+
+@media (max-width: 1000px) {
+  .cl-row { grid-template-columns: 22px 1fr 1fr .7fr; }
+  .cl-row > span:nth-child(4), .cl-row > span:nth-child(6) { display: none; }
+}
+
+/* Record de la piste (Statistiques). */
+.tr-card { margin: 0 0 18px; padding: 18px 20px; display: grid; gap: 14px; border: 1px solid rgba(245,184,61,.4); border-radius: 12px;
+  background: linear-gradient(100deg, rgba(245,184,61,.12), transparent 55%), #0d1215; }
+.tr-main { display: grid; gap: 4px; justify-items: start; }
+.tr-kicker { display: inline-flex; align-items: center; gap: 7px; color: #f5b83d; font-size: 11px; font-weight: 900; letter-spacing: .18em; }
+.tr-main strong { color: #f5b83d; font-size: 44px; font-weight: 900; font-style: italic; line-height: 1; font-variant-numeric: tabular-nums; }
+.tr-main small { color: #dce3df; font-size: 13px; font-weight: 700; }
+.tr-note { margin: 2px 0 6px; color: #8aa0b6; font-size: 12px; }
+.tr-form { display: grid; grid-template-columns: 160px minmax(0, 260px) auto; gap: 12px; align-items: end; }
+.tr-form label { display: grid; gap: 5px; }
+.tr-form label > span { color: #8aa0b6; font-size: 11px; font-weight: 800; }
+.tr-form label em { font-style: normal; font-weight: 600; }
+.tr-actions { display: flex; gap: 8px; }
+.tr-candidates h3 { margin: 0; font-size: 13px; font-weight: 900; }
+.tr-candidates ul { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.tr-candidates li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid #26303d; border-radius: 8px; font-size: 13px; }
+.tr-candidates li b { color: #f5b83d; font-size: 16px; font-variant-numeric: tabular-nums; }
+.tr-error { margin: 0; }
+@media (max-width: 720px) { .tr-form { grid-template-columns: 1fr; } }

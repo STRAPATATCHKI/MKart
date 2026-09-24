@@ -19,8 +19,12 @@ export function cloudConfigured() {
     // A host has no repository to put a file in, so the key may come through the environment:
     // FIREBASE_SERVICE_ACCOUNT holds the JSON itself, FIREBASE_KEY_FILE a path to it (Render's
     // secret files land in /etc/secrets). On the venue PC neither is set and we read ignore.json.
-    const inline = process.env.FIREBASE_SERVICE_ACCOUNT;
-    const raw = JSON.parse(inline || fs.readFileSync(KEY_FILE, "utf8"));
+    // The MKart service on Render holds it in a variable named after the file,
+    // "firebase-service-account.json"; a secret file of that name lands in /etc/secrets.
+    const inline = process.env.FIREBASE_SERVICE_ACCOUNT || process.env["firebase-service-account.json"];
+    const secretFile = "/etc/secrets/firebase-service-account.json";
+    const file = !process.env.FIREBASE_KEY_FILE && !fs.existsSync(KEY_FILE) && fs.existsSync(secretFile) ? secretFile : KEY_FILE;
+    const raw = JSON.parse(inline || fs.readFileSync(file, "utf8"));
     if (!raw.client_email || !raw.private_key) return false;
     // An environment variable cannot hold real newlines, so a pasted key arrives with \n in it.
     raw.private_key = raw.private_key.replace(/\\n/g, "\n");
@@ -58,7 +62,14 @@ async function accessToken() {
 
 async function rtdb(method, at, data) {
   const token = await accessToken();
-  const res = await fetch(`${DB_URL}/${at}.json?access_token=${encodeURIComponent(token)}`, {
+  // `at` is either a bare path ("signups/abc") or a path that already carries its .json and a
+  // query ("signups.json?orderBy=...&limitToLast=100"). Appending ".json?access_token" to the
+  // second form glued ".json" onto the last query value, and Firebase refused the whole read
+  // with "limitToLast must be an integer" - so the importer never ran once.
+  const [path, query] = String(at).split("?");
+  const base = path.endsWith(".json") ? path : `${path}.json`;
+  const auth = `access_token=${encodeURIComponent(token)}`;
+  const res = await fetch(`${DB_URL}/${base}?${query ? `${query}&` : ""}${auth}`, {
     method,
     headers: data ? { "Content-Type": "application/json" } : undefined,
     body: data ? JSON.stringify(data) : undefined,

@@ -5,8 +5,8 @@
 // live re-ordering → chequered flag → podium reveal.
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  ChevronsDown, ChevronsUp, Crown, Flag, Maximize, Minimize, Play, Radio, RotateCcw, Timer, Trophy,
-  Volume2, VolumeX, X, Zap,
+  ChevronsDown, ChevronsUp, Crown, Flag, Maximize, Minimize, Play, Radio, Timer, Trophy,
+  TrafficCone, Volume2, VolumeX, X, Zap,
 } from "lucide-react";
 import { useLiveRace } from "@/hooks/use-live-race";
 import { useActiveRoster } from "@/hooks/use-sessions";
@@ -21,10 +21,17 @@ import type { HistorySession } from "@/hooks/use-history";
 import { BRIDGE_URL } from "@/lib/bridge-client";
 import { MEGAKART_TRACK, souvenirFromHistory, souvenirUrl, type RaceSouvenir } from "@/lib/race-souvenir";
 import { listenForScreenCommands } from "@/lib/screen-channel";
+import { explainTimingError, timing, TimingOffline } from "@/lib/timing-client";
+import { canStart, formatRaceClock, startLightSchedule } from "./start-sequence";
+import { avgSpeedKmh, fmtLap, fmtSpeed } from "@/components/timing/lap-rows";
+import { IntroTraffic } from "./intro-traffic";
+import { useTiming } from "@/hooks/use-timing";
+import { useTrackRecord } from "@/hooks/use-track-record";
+import { compareToRecord, dayBestLap, fmtRecord } from "@/lib/track-record";
+import { useSavedRaces } from "@/hooks/use-saved-races";
 
 const SIM_LAPS = 8;
 const SIM_SPEED = 9; // simulated ms per real ms → an 8-lap race lasts ~40 s on screen
-const INTRO_MS = 3600;
 const FONT_HREF = "https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700;1,800;1,900&display=swap";
 
 type Phase = "intro" | "board" | "countdown" | "racing" | "finish" | "podium";
@@ -45,6 +52,9 @@ const parseLap = (value: string) => {
 export function BigScreen({ onExit }: { onExit?: () => void }) {
   const roster = useActiveRoster();
   const live = useLiveRace(roster);
+  // The screen talks to MegaKart Timing Control directly, so the start lights and the chrono
+  // that answers them are the same action: no operator has to press two buttons in sync.
+  const chrono = useTiming(1000);
 
   const [phase, setPhase] = useState<Phase>("intro");
   const [source, setSource] = useState<"live" | "sim">("live");
@@ -53,6 +63,11 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
   const [simDone, setSimDone] = useState(false);
   const [clock, setClock] = useState(0);
   const [lights, setLights] = useState(0);
+  // The start gantry is red while it fills, then the whole bar turns green on GO. Karting
+  // customers read "green means go"; F1 lights-out reads as "nothing happened".
+  const [lightsGreen, setLightsGreen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const [showGo, setShowGo] = useState(false);
   const [banner, setBanner] = useState<Banner | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
@@ -68,6 +83,10 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
   const [shownResult, setShownResult] = useState<{ race: RaceSouvenir; url: string | null } | null>(null);
 
   const sound = useRaceSound(muted);
+  // The track record, to chase: shown in the best-lap card, the ticker, and announced when beaten.
+  const { record } = useTrackRecord(60_000);
+  // Today's saved races, for "best lap of the day" in each podium souvenir.
+  const { races: savedRaces } = useSavedRaces();
   const simRef = useRef<SimState | null>(null);
   const timers = useRef<number[]>([]);
   const prevRanks = useRef(new Map<string, number>());
@@ -104,11 +123,75 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
     [live.drivers, live.status],
   );
 
-  const rows = source === "sim" ? simRows : liveRows;
+  // The board reads MegaKart Timing Control, the service that actually runs the races now.
+  // The header already did, which is why it could say PRET while the board below it stayed
+  // empty: the two halves of this screen were reading two different services. The old Apex
+  // bridge feed is kept as the fallback, so a venue still on GoKarts is not left blank.
+  const chronoRows = useMemo<BoardRow[]>(() => {
+    const drivers = chrono.race?.drivers ?? [];
+    if (!drivers.length) return [];
+    const ordered = [...drivers].sort((a, b) =>
+      (a.position ?? 999) - (b.position ?? 999) || (a.grid ?? 999) - (b.grid ?? 999));
+    const leaderLaps = ordered[0]?.laps ?? 0;
+    // The chrono already ordered the field by the session's rule; this column only has to say
+    // the gap in that rule's currency - laps in a race, seconds in a time trial.
+    const chronos = chrono.race?.rankMode === "chronos";
+    const fastest = ordered[0]?.bestLapMs ?? null;
+    return ordered.map((d, i) => {
+      // Before anyone has crossed, every driver is on zero laps: showing "+0 tr" for the whole
+      // grid reads as a race in progress. The grid slot is the honest thing to show there.
+      const behind = leaderLaps - d.laps;
+      let gap: string;
+      if (chronos) {
+        if (i === 0) gap = fastest != null ? "LEADER" : "GRILLE";
+        else if (fastest != null && d.bestLapMs != null) gap = `+${((d.bestLapMs - fastest) / 1000).toFixed(3)}`;
+        else gap = d.grid ? `P${d.grid}` : "\u2014";
+      } else {
+        gap = i === 0
+          ? (leaderLaps > 0 ? "LEADER" : "GRILLE")
+          : (leaderLaps > 0 ? (behind > 0 ? `+${behind} tr` : "\u2014") : (d.grid ? `P${d.grid}` : "\u2014"));
+      }
+      return {
+        id: d.transponder || `kart-${d.kart}`,
+        rank: i + 1,
+        name: d.driver,
+        kart: String(d.kart),
+        laps: d.laps,
+        last: fmtLap(d.lastLapMs),
+        best: fmtLap(d.bestLapMs),
+        bestMs: d.bestLapMs ?? null,
+        gap,
+        total: "\u2014",
+        finished: chrono.race?.state === "FINISHED",
+        lapProgress: 0,
+        pilot: d.color ?? null,
+      } as BoardRow;
+    });
+  }, [chrono.race]);
+
+  // Timing Control wins whenever it has a field - including a race that is merely PREPARED, so
+  // the grid is on the wall before the lights rather than only after the first kart crosses.
+  const rows = source === "sim" ? simRows : (chronoRows.length ? chronoRows : liveRows);
   const leader = rows[0] ?? null;
   const bestMs = rows.reduce<number | null>((min, r) => (r.bestMs != null && (min == null || r.bestMs < min) ? r.bestMs : min), null);
   const bestRow = rows.find((r) => r.bestMs != null && r.bestMs === bestMs) ?? null;
-  const raceOver = source === "sim" ? simDone : live.status === "finished" && rows.length > 0;
+  const recordCmp = compareToRecord(bestMs, record);
+  const chronoFinished = chrono.race?.state === "FINISHED" && chronoRows.length > 0;
+  const raceOver = source === "sim" ? simDone : chronoFinished || (live.status === "finished" && rows.length > 0);
+
+  // PREPARE is what ends the idle screen: the moment there is a field, the board takes over.
+  // Anything the operator does by hand (DIRECT, PODIUM, the start lights) also wins, so this
+  // only ever pulls the screen OUT of intro, never back into it mid-race.
+  useEffect(() => {
+    let next: Phase | null = null;
+    if (phase === "intro" && (rows.length > 0 || source === "sim")) next = "board";
+    else if (phase === "board" && source === "live" && rows.length === 0 && !raceOver) next = "intro";
+    if (next === null) return;
+    // Deferred a tick rather than set inside the effect body: the change is data-driven, not
+    // user-driven, and a frame of delay is invisible on a wall screen.
+    const id = window.setTimeout(() => setPhase(next as Phase), 0);
+    return () => window.clearTimeout(id);
+  }, [phase, rows.length, source, raceOver]);
   // Read the sim ref rather than `source`: callbacks scheduled from startSimulation close over the pre-sim render.
   const stamp = () => (simRef.current ? fmtClock(simRef.current.clock) : new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
 
@@ -168,6 +251,56 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
     void souvenirUrl(race).then((url) => setShownResult((current) => (current?.race === race ? { race, url } : current)));
   };
 
+  // Lights the five reds one per beat, then hands over at "go". The caller decides what
+  // happens at that instant: a simulation, or the real race.
+  const runStartLights = (go: () => void) => {
+    setLightsGreen(false);
+    setLights(0);
+    const { steps, greenAt } = startLightSchedule();
+    steps.forEach((step) => later(() => {
+      setLights(step.lights);
+      setLightsGreen(step.green);
+      if (step.at === greenAt) {
+        setShowGo(true);
+        sound.go();
+        go();
+      } else if (step.lights > 0) {
+        sound.light();
+      } else {
+        setShowGo(false);            // the green hold is over; the board takes the screen back
+      }
+    }, step.at));
+    return greenAt;
+  };
+
+  // The real start. The chrono is armed on "first_crossing", so this releases the pilots and
+  // the clock begins on the first transponder to cross - the lights are the human half of it.
+  const startRace = async () => {
+    if (starting) return;
+    setStartError(null);
+    const allowed = canStart(chrono.online, chrono.race?.state);
+    if (!allowed.ok) return setStartError(allowed.reason);
+
+    setStarting(true);
+    sound.unlock();
+    resetBoard();
+    simRef.current = null;
+    setSimDone(false);
+    setSource("live");
+    setPhase("countdown");
+    runStartLights(() => {
+      setPhase("racing");
+      pushFeed("go", "Feux verts · la course est lancée");
+      // Fired at lights-out, not before: a pilot who moves on green must already be timed.
+      void timing.start()
+        .then((result) => {
+          if (!result.success) setStartError(explainTimingError(result.error, result.message));
+        })
+        .catch((e) => setStartError(e instanceof TimingOffline ? "MegaKart Timing Control ne répond pas." : String(e)))
+        .finally(() => { setStarting(false); chrono.refresh(); });
+    });
+  };
+
   const startSimulation = () => {
     resetBoard();
     sound.unlock();
@@ -178,16 +311,10 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
     setSimRows(simulationRows(sim));
     setClock(0);
     setPhase("countdown");
-    for (let i = 1; i <= 5; i++) later(() => { setLights(i); sound.light(); }, 700 + i * 850);
-    const goAt = 700 + 5 * 850 + 600 + Math.random() * 900;
-    later(() => {
-      setLights(0);
-      setShowGo(true);
+    runStartLights(() => {
       setPhase("racing");
-      sound.go();
-      pushFeed("go", "Feux éteints · la course est lancée");
-    }, goAt);
-    later(() => setShowGo(false), goAt + 1300);
+      pushFeed("go", "Feux verts · la course est lancée");
+    });
   };
 
   const goLive = () => {
@@ -210,7 +337,9 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
 
   // Intro → board, display font, fullscreen tracking, clock, timer cleanup.
   useEffect(() => {
-    const introTimer = window.setTimeout(() => setPhase((p) => (p === "intro" ? "board" : p)), INTRO_MS);
+    // No timer: the intro is the screen the venue looks at between races, so it stays until
+    // a race actually exists. Leaving it after a few seconds only ever revealed an empty board
+    // saying "prochaine course bientot" - the logo says that better, and looks like something.
     if (!document.querySelector(`link[href="${FONT_HREF}"]`)) {
       const link = document.createElement("link");
       link.rel = "stylesheet";
@@ -222,7 +351,6 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
     const tick = window.setInterval(() => setNow(new Date()), 1000);
     const pending = timers.current;
     return () => {
-      window.clearTimeout(introTimer);
       window.clearInterval(tick);
       document.removeEventListener("fullscreenchange", onFullscreen);
       pending.forEach((t) => window.clearTimeout(t));
@@ -301,8 +429,9 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
 
     if (source === "live" && bestMs != null && bestRow) {
       if (liveBest.current != null && bestMs < liveBest.current) {
-        pushFeed("best", `Meilleur tour · ${bestRow.name} · ${bestRow.best}`);
-        showBanner("best", "MEILLEUR TOUR", `${bestRow.name} · ${bestRow.best}`);
+        const beaten = compareToRecord(bestMs, record).kind === "beaten";
+        pushFeed("best", `${beaten ? "NOUVEAU RECORD DE LA PISTE" : "Meilleur tour"} · ${bestRow.name} · ${bestRow.best}`);
+        showBanner("best", beaten ? "NOUVEAU RECORD DE LA PISTE" : "MEILLEUR TOUR", `${bestRow.name} · ${bestRow.best}`);
         sound.best();
       }
       liveBest.current = bestMs;
@@ -326,6 +455,57 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
       if (phase === "finish" || phase === "podium") setPhase("board");
     }
   }, [live.status, live.drivers.length, source, phase, sound]);
+
+  // The chrono's own race ending: the countdown reaches zero (or ARRIVÉE is pressed), the
+  // state goes FINISHED, and the wall shows the flag, then the podium, without anyone at the
+  // desk having to press anything. A new PREPARE afterwards takes the screen back to the grid.
+  const chronoState = chrono.race?.state ?? null;
+  const chronoStateWas = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = chronoStateWas.current;
+    chronoStateWas.current = chronoState;
+    if (source !== "live") return;
+    if (previous !== "FINISHED" && chronoState === "FINISHED" && chronoRows.length > 0
+        && (phase === "board" || phase === "racing")) {
+      later(() => { setPhase("finish"); sound.flag(); }, 0);
+      later(() => { setPhase("podium"); sound.fanfare(); }, 2600);
+    }
+    if ((previous === "FINISHED" || previous === "IDLE") && (chronoState === "PREPARED" || chronoState === "RUNNING")
+        && (phase === "finish" || phase === "podium")) {
+      later(() => setPhase("board"), 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chronoState, chronoRows.length, source, phase]);
+
+  // The finished race as a souvenir, built from the chrono's classification, so the podium
+  // has its QR the moment the flag falls rather than waiting on an archive that may never come.
+  const [chronoResult, setChronoResult] = useState<{ id: string; race: RaceSouvenir; url: string } | null>(null);
+  const chronoRaceId = chrono.race?.raceId ?? null;
+  useEffect(() => {
+    if (!chronoFinished || !chronoRaceId || chronoResult?.id === chronoRaceId) return;
+    const drivers = [...(chrono.race?.drivers ?? [])].sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
+    const race: RaceSouvenir = {
+      id: chronoRaceId,
+      finishedAt: chrono.race?.finishedAt ?? new Date().toISOString(),
+      kind: "race",
+      track: MEGAKART_TRACK,
+      drivers: drivers.map((d) => ({
+        name: d.driver, kart: String(d.kart), laps: d.laps, bestLapMs: d.bestLapMs ?? null,
+        totalTimeMs: null, pilot: d.color ?? null,
+      })),
+    };
+    // The records as they stand when the flag falls, kept in the link: the phone page compares
+    // the pilot's lap with the best of the day and the track record, lower down (never in the story).
+    const dayBest = dayBestLap(savedRaces, drivers.map((d) => ({ driver: d.driver, bestLapMs: d.bestLapMs })), record);
+    race.records = {
+      dayBestMs: dayBest?.lapMs ?? null, dayBestBy: dayBest?.driver ?? null,
+      recordMs: record.lapMs, recordBy: record.driver,
+    };
+    let cancelled = false;
+    void souvenirUrl(race).then((url) => { if (!cancelled) setChronoResult({ id: chronoRaceId, race, url }); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chronoFinished, chronoRaceId, chronoResult?.id]);
 
   // Live race archived by the bridge → load its official classification for the podium and QR.
   const liveMaxLaps = live.drivers.reduce((max, d) => Math.max(max, d.laps), 0);
@@ -354,21 +534,53 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
     };
   }, [archiveId, liveDriverCount, liveMaxLaps, liveResult?.id]);
 
-  // Commands from the dashboard (same PC): show a past race's podium and souvenir QR.
+  // Commands from the dashboard (same PC): show a past race's podium, or run the start lights.
+  // Both go through refs so the listener is bound once and still sees the latest closures.
   const commandHandler = useRef<(race: RaceSouvenir) => void>(() => {});
+  const startHandler = useRef<() => boolean>(() => false);
   useEffect(() => {
     commandHandler.current = showResult;
+    // Take the start only when it is actually startable here; otherwise say no, and the
+    // dashboard arms the chrono itself rather than waiting on lights that will never come.
+    startHandler.current = () => {
+      if (starting || phase === "countdown") return false;
+      if (!canStart(chrono.online, chrono.race?.state).ok) return false;
+      void startRace();
+      return true;
+    };
   });
-  useEffect(() => listenForScreenCommands((command) => commandHandler.current(command.race)), []);
+  // Browsers only let a page make sound after somebody has touched it. The lights are now
+  // fired from the dashboard, over the channel, so the TV window itself may never be clicked -
+  // and would then run red → green in silence. Any gesture on the TV, ever, unlocks audio for
+  // good: the click that dismisses the intro, the fullscreen button, a key. So the first thing
+  // to do when setting up the wall is to touch it once.
+  useEffect(() => {
+    const unlock = () => sound.unlock();
+    window.addEventListener("pointerdown", unlock, { passive: true });
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [sound]);
+
+  useEffect(() => listenForScreenCommands({
+    onShowResult: (command) => commandHandler.current(command.race),
+    onStartLights: () => startHandler.current(),
+  }), []);
 
   const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});
   useEffect(() => {
     keyHandler.current = (e) => {
       const key = e.key.toLowerCase();
       if (e.target instanceof HTMLButtonElement && (key === " " || key === "enter")) return;
-      if (key === " " || key === "s") {
+      if (key === "s") {
         e.preventDefault();
         if (phase !== "countdown" && phase !== "racing") startSimulation();
+      } else if (key === "d") {
+        // The real start, on its own key: never on Space, which is the simulation's.
+        e.preventDefault();
+        void startRace();
       } else if (key === "p" && raceOver) setPhase("podium");
       else if (key === "f") toggleFullscreen();
       else if (key === "m") setMuted((m) => !m);
@@ -397,12 +609,16 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
       }[live.status];
 
   const wheelSpin = phase === "racing" || (source === "live" && live.status === "running") ? ".42s" : "2.6s";
-  const subtitle = `MEGAKART FÈS · ${
+  // What the pilots actually want on the wall: the time left in THEIR race, not the hour.
+  const raceClock = formatRaceClock(chrono.race);
+
+  const subtitle = `MEGAKART FÈS · ${chrono.race?.rankMode === "chronos" ? "CHRONO · " : ""}${
     source === "sim" ? "SIMULATION" : shownResult ? "RÉSULTATS" : live.megakartSession?.name ? live.megakartSession.name.toUpperCase() : "EN DIRECT"
   }`;
   // What the finish card and podium show: a race pushed from the dashboard, else the official
   // archive of the live race that just finished, else the rows on the board.
-  const officialLive = liveResult && source === "live" && live.status === "finished" && live.lastArchive?.id === liveResult.id ? liveResult : null;
+  const officialChrono = chronoResult && source === "live" && chronoFinished && chronoResult.id === chronoRaceId ? chronoResult : null;
+  const officialLive = officialChrono ?? (liveResult && source === "live" && live.status === "finished" && live.lastArchive?.id === liveResult.id ? liveResult : null);
   const resultRace = shownResult?.race ?? officialLive?.race ?? null;
   const resultRows = useMemo(() => (resultRace ? rowsFromSouvenir(resultRace) : null), [resultRace]);
   const podiumRows = resultRows ?? rows;
@@ -429,8 +645,14 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
               <b>{lapLabel.now || "—"}{lapLabel.total && <em>/{lapLabel.total}</em>}</b>
             </div>
             <div className="bs-stat">
-              <small>{source === "sim" ? "CHRONO" : "HEURE"}</small>
-              <b>{source === "sim" ? fmtClock(clock) : now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</b>
+              <small>{source === "sim" ? "CHRONO" : raceClock ? "TEMPS RESTANT" : "HEURE"}</small>
+              <b className={raceClock && !raceClock.pending ? "bs-stat--live" : undefined}>
+                {source === "sim"
+                  ? fmtClock(clock)
+                  : raceClock
+                    ? raceClock.text
+                    : now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+              </b>
             </div>
           </div>
           {banner && (
@@ -452,8 +674,9 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
               <div className="bs-empty">
                 <div className="bs-empty-wheel" aria-hidden="true"><i /></div>
                 <strong>{live.status === "waiting" ? "DÉPART IMMINENT" : "PROCHAINE COURSE BIENTÔT"}</strong>
-                <span>{live.bridgeConnected ? "Le classement s’affichera dès le drapeau vert." : "Chronométrage hors ligne — lancez une simulation pour tester l’écran."}</span>
-                <button type="button" className="bs-btn bs-btn--primary bs-btn--lg" onClick={startSimulation}><Play /> Lancer la simulation</button>
+                <span>{live.bridgeConnected
+                  ? "Le classement s’affichera dès le drapeau vert."
+                  : "En attente du chronométrage."}</span>
               </div>
             ) : (
               <div key={`${source}-${runId}-${phase === "intro" ? "intro" : "on"}`} className="bs-rows" style={{ "--count": rowCount } as CSSProperties}>
@@ -503,10 +726,25 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
               <div className="bs-leader-wheel" style={{ "--spin": wheelSpin } as CSSProperties} aria-hidden="true"><i /></div>
             </article>
 
-            <article className="bs-card bs-bestlap">
-              <span className="bs-card-label"><Zap /> MEILLEUR TOUR</span>
+            <article className={"bs-card bs-bestlap" + (recordCmp.kind === "beaten" ? " is-record" : "")}>
+              <span className="bs-card-label"><Zap /> {recordCmp.kind === "beaten" ? "NOUVEAU RECORD !" : "MEILLEUR TOUR"}</span>
               <strong key={bestMs ?? "none"}>{bestRow ? bestRow.best : "—"}</strong>
               <small>{bestRow ? `${bestRow.name} · KART ${bestRow.kart}` : "En attente du premier tour"}</small>
+              {/* Average over the lap - circuit length / time - the only speed one loop can give. */}
+              {bestRow && avgSpeedKmh(bestMs, chrono.race?.trackLengthM) != null
+                ? <small className="bs-speed">{fmtSpeed(bestMs, chrono.race?.trackLengthM)}</small>
+                : null}
+              {/* The all-time record, and how far the session is from it: something to chase. */}
+              <div className="bs-record">
+                <span><Trophy /> RECORD DE LA PISTE</span>
+                <b className={recordCmp.kind === "beaten" ? "is-old" : ""}>{fmtRecord(record.lapMs)}</b>
+                <em>{record.driver ?? "À battre"}</em>
+                <i>
+                  {recordCmp.kind === "behind" ? `+${(recordCmp.gapMs / 1000).toFixed(3)} du record`
+                    : recordCmp.kind === "beaten" ? `battu de ${(recordCmp.gainMs / 1000).toFixed(3)} !`
+                    : "Qui va le battre ?"}
+                </i>
+              </div>
             </article>
 
             <article className="bs-card bs-feed">
@@ -532,25 +770,36 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
           <div className="bs-marquee">
             {[0, 1].map((copy) => (
               <span key={copy}>
-                CLASSEMENT OFFICIEL <i /> RÉSERVEZ VOTRE PROCHAINE SESSION <i /> BATTEZ LE MEILLEUR TOUR <i /> GOOD GAME À TOUS LES PILOTES <i /> MEGAKART FÈS <i />
+                CLASSEMENT OFFICIEL <i /> RÉSERVEZ VOTRE PROCHAINE SESSION <i /> RECORD DE LA PISTE {fmtRecord(record.lapMs)} · À BATTRE <i /> GOOD GAME À TOUS LES PILOTES <i /> MEGAKART FÈS <i />
               </span>
             ))}
           </div>
         </footer>
       </div>
 
-      {phase === "countdown" && (
+      {/* Kept on screen through the green hold: the race starts the instant the bar turns green,
+          so keying this to the phase alone would unmount the gantry on the very frame the
+          pilots are meant to see it. */}
+      {(phase === "countdown" || lightsGreen) && (
         <div className="bs-countdown" role="status" aria-live="assertive">
-          <span className="bs-kicker">GRILLE DE DÉPART · {SIM_LAPS} TOURS</span>
+          <span className="bs-kicker">
+            {source === "sim"
+              ? `GRILLE DE DÉPART · ${SIM_LAPS} TOURS`
+              : chrono.race?.raceName
+                ? `GRILLE DE DÉPART · ${chrono.race.raceName.toUpperCase()}`
+                : "GRILLE DE DÉPART"}
+          </span>
           <div className="bs-lights">
             {[1, 2, 3, 4, 5].map((n) => (
-              <div key={n} className={"bs-light" + (lights >= n ? " is-on" : "")}><i /><i /></div>
+              <div key={n} className={"bs-light" + (lights >= n ? " is-on" : "") + (lightsGreen ? " is-green" : "")}><i /><i /></div>
             ))}
           </div>
-          <strong>PRÉPAREZ-VOUS</strong>
+          <strong>{lightsGreen ? "FEUX VERTS · PARTEZ !" : "PRÉPAREZ-VOUS"}</strong>
         </div>
       )}
-      {showGo && <div className="bs-go" aria-hidden="true">GO!</div>}
+      {/* While the gantry is green the GO sits below it: the lamps are the signal a pilot reads
+          from the far end of the track, and a full-screen word on top of them hides it. */}
+      {showGo && <div className={"bs-go" + (lightsGreen ? " bs-go--under" : "")} aria-hidden="true">GO!</div>}
 
       {phase === "finish" && winner && (
         <div className="bs-finish" role="dialog" aria-label="Course terminée">
@@ -601,14 +850,24 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
           <Lockup className="bs-lockup--xl" spin=".38s" />
           <i className="bs-intro-shine" />
         </div>
-        <div className="bs-intro-title"><span>CLASSEMENT OFFICIEL</span><b>ÉCRAN GÉANT</b></div>
+        <IntroTraffic active={phase === "intro"} />
+        <div className="bs-intro-title"><span>MEGAKART FÈS</span><b>CHRONO EN DIRECT</b></div>
         <div className="bs-intro-bar"><i /></div>
       </div>
 
       <nav className="bs-controls" aria-label="Commandes de l’écran">
-        <button type="button" className="bs-btn bs-btn--primary" onClick={startSimulation} disabled={phase === "countdown" || phase === "racing"}>
-          {source === "sim" && simDone ? <RotateCcw /> : <Play />} {source === "sim" && simDone ? "Rejouer" : "Simulation"} <kbd>Espace</kbd>
+        {/* The real start: lights for the pilots, and the chrono released on green. Disabled
+            unless Timing Control actually has a race prepared, so it cannot fire into nothing. */}
+        <button
+          type="button"
+          className="bs-btn bs-btn--go"
+          onClick={() => void startRace()}
+          disabled={starting || phase === "countdown" || chrono.race?.state !== "PREPARED"}
+          title={chrono.race?.state === "PREPARED" ? "Lancer le départ" : "Préparez la course depuis le dashboard"}
+        >
+          <TrafficCone /> Départ <kbd>D</kbd>
         </button>
+
         <button type="button" className="bs-btn" onClick={() => setPhase("podium")} disabled={!raceOver || phase === "podium"}>
           <Trophy /> Podium <kbd>P</kbd>
         </button>
@@ -627,6 +886,10 @@ export function BigScreen({ onExit }: { onExit?: () => void }) {
           </button>
         )}
       </nav>
+
+      {startError && (
+        <p className="bs-start-error" role="alert" onClick={() => setStartError(null)}>{startError}</p>
+      )}
     </div>
   );
 }

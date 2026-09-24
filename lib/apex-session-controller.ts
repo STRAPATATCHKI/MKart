@@ -1,9 +1,9 @@
 // Abstraction over the Apex/GoKarts WRITE side (SupportDev §9: do not fake write commands).
-// The live READ side is proven (30001 feed → bridge). The write side (create/start/finish a
-// session in GoKarts) requires the authenticated Sessions API (9122) or a confirmed JSON
-// import schema — neither is available yet. So the default controller returns NOT_CONFIGURED
-// and the UI treats the session as MegaKart-only (WAITING_APEX). When the write path is
-// verified, implement a real controller and swap it in — no UI changes needed.
+// The live READ side is proven (30001 feed → bridge). The local Python controller
+// now owns fresh CREATE through a durable request ledger and a qualified Apex
+// reference, independent of the optional reuse pool. Dashboard writes stay
+// NOT_CONFIGURED until that fresh-create path passes its approved live test.
+// No direct Apex database writes. This browser interface is not yet wired to it.
 
 import type { MegaKartSession } from "./megakart-session";
 

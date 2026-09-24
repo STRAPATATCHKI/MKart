@@ -68,6 +68,9 @@ tsconfig.tsbuildinfo
 /.sites-runtime/
 /.firebase/
 /tmp/
+/artifacts/apex-session52/
+/artifacts/apex-ipc/
+__pycache__/
 /x
 
 # ── logs ─────────────────────────────────────────────────────────────────────
@@ -93,3 +96,6 @@ ignore.json
 *firebase-adminsdk*.json
 serviceAccountKey.json
 .env.local
+
+# MegaKart API key (tools/megakart-api): a secret, pasted into Render, never committed
+tools/megakart-api/api-key.txt

@@ -115,3 +115,32 @@
 @media (prefers-reduced-motion: reduce) {
   .sv *, .sv *::before, .sv *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Story first, link second. The story button wears the Instagram gradient so a customer
+   recognises it before reading it; the link button steps back to an outline. */
+.sv-share--story { color: #fff; background: linear-gradient(45deg, #f9a825 0%, #f0453f 45%, #b0298f 100%);
+  box-shadow: 0 6px 22px rgba(240,69,63,.28); }
+.sv-share--story:disabled { opacity: .7; }
+.sv-share--ghost { background: transparent; color: #dce3df; border: 1px solid #2b3327; box-shadow: none; }
+.sv-share-row { display: grid; gap: 10px; }
+
+/* Records: the pilot's lap against the race, the day and the track record (page only, not the story). */
+.sv-records h2 { margin: 0 0 10px; font: italic 900 26px/1 var(--sv-display); text-transform: uppercase; letter-spacing: .02em; }
+.sv-records ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.sv-rec { --rec: var(--sv-lime); padding: 12px 12px 10px; border: 1px solid var(--sv-line); border-radius: 12px; background: var(--sv-surface); }
+.sv-rec--record { --rec: #f5b83d; border-color: rgba(245,184,61,.45); background: linear-gradient(90deg, rgba(245,184,61,.12), var(--sv-surface) 75%); }
+.sv-rec--day { --rec: var(--sv-lime); }
+.sv-rec--race { --rec: var(--sv-silver); }
+.sv-rec--me { --rec: #38e07b; border-color: rgba(56,224,123,.5); }
+.sv-rec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.sv-rec-head span { display: inline-flex; align-items: center; gap: 6px; color: var(--sv-muted); font-size: 11px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+.sv-rec-head span svg { width: 15px; height: 15px; color: var(--rec); }
+.sv-rec-head b { color: var(--rec); font: italic 900 28px/1 var(--sv-display); font-variant-numeric: tabular-nums; }
+.sv-rec-track { margin: 8px 0 6px; height: 10px; border-radius: 99px; background: #1b2119; overflow: hidden; }
+.sv-rec-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, color-mix(in srgb, var(--rec) 55%, transparent), var(--rec));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--rec) 45%, transparent); transform-origin: left; animation: sv-bar-grow .9s cubic-bezier(.22,1,.36,1) both; }
+.sv-rec small { color: #c3cabd; font-size: 12px; font-weight: 700; }
+.sv-records-msg { margin: 12px 0 0; padding: 12px 14px; border-radius: 12px; background: rgba(216,255,53,.08); border: 1px solid rgba(216,255,53,.3);
+  color: var(--sv-text); font-size: 14px; font-weight: 800; line-height: 1.4; }
+.sv-records-msg.is-record { background: rgba(245,184,61,.14); border-color: rgba(245,184,61,.55); color: #ffd98a; }
+@keyframes sv-bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }

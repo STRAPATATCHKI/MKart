@@ -10,6 +10,19 @@
 export type SessionType = "practice" | "race" | "game" | "merge";
 
 // GoKarts UI label ↔ Apex JSON type (from apex-session-import-schema.md)
+/**
+ * How the chrono orders the field for each session type.
+ *
+ * A race ("Course") is won by whoever covers the most laps. Everything else is about the lap
+ * itself: Chronos and Cumul/Meilleurs temps are explicitly best-time sessions, and Pay & Go is
+ * open track where laps completed depends only on when you turned up - so the one number that
+ * is fair to rank on is the best lap.
+ */
+export type RankMode = "course" | "chronos";
+export function rankModeFor(type: SessionType): RankMode {
+  return type === "race" ? "course" : "chronos";
+}
+
 export const SESSION_TYPE_LABELS: { value: SessionType; label: string }[] = [
   { value: "practice", label: "Chronos" },
   { value: "race", label: "Course" },

@@ -1,0 +1,199 @@
+/* ---------------------------------------------------------------------------------------
+   CONTRÔLE DE COURSE — the race deck.
+
+   This panel is not a form, it is a console: the operator stands at it, looks up at the track,
+   and hits one of four controls. So the circuit takes the top of the panel at full width, the
+   standings sit under it, and the controls run along the bottom as a bar of large targets —
+   the shape of a game HUD rather than of a settings page.
+
+   The three race verbs keep the colours they already had (lime = prepare, green = start,
+   orange = finish); what changes is that they now read as hardware: a lit face, a darker rim,
+   and a press that actually moves. Disabled states stay obviously dead, because half of
+   operating this thing safely is seeing that START cannot be pressed yet.
+   --------------------------------------------------------------------------------------- */
+
+.race-deck { display: grid; gap: 14px; }
+
+/* ---- the track, across the top ---------------------------------------------------------- */
+.race-deck-track {
+  position: relative; border: 1px solid #1d2630; border-radius: 16px; padding: 10px;
+  background:
+    radial-gradient(120% 90% at 50% -20%, rgba(216,255,53,.07), transparent 62%),
+    linear-gradient(180deg, #0c1219, #070b10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 18px 40px rgba(0,0,0,.45);
+  overflow: hidden;
+}
+/* A faint grid under the circuit, so the tarmac sits on something rather than floating. */
+.race-deck-track::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
+  background-image: linear-gradient(rgba(216,255,53,.035) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(216,255,53,.035) 1px, transparent 1px);
+  background-size: 38px 38px;
+}
+.race-deck-track > * { position: relative; }
+
+/* The strip above the circuit: race name, state, and the clock that everyone looks at. */
+.race-deck-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 2px 8px 10px;
+}
+.race-deck-id { display: grid; gap: 2px; min-width: 0; }
+.race-deck-id b {
+  font: 800 17px/1.1 "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  letter-spacing: .04em; text-transform: uppercase; color: #eaf0e4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.race-deck-id small { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #8aa0b6; }
+
+.race-deck-clock {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 42px; line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: .02em; color: #8aa0b6;
+}
+/* Running and counting: the number is the brand colour and lit. Armed but not yet triggered
+   is amber - it says "waiting for the first kart", which is a different thing from running. */
+.race-deck-clock.is-live { color: var(--lime); text-shadow: 0 0 26px rgba(216,255,53,.35); }
+.race-deck-clock.is-armed { color: #e3b341; text-shadow: 0 0 22px rgba(227,179,65,.3); }
+
+.race-deck-state {
+  display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 99px;
+  border: 1px solid #253040; background: #0d141b;
+  font-size: 10px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; color: #8aa0b6;
+}
+.race-deck-state i { width: 7px; height: 7px; border-radius: 99px; background: #4a5a6b; }
+.race-deck-state.is-live { border-color: rgba(216,255,53,.4); color: #dff58f; }
+.race-deck-state.is-live i { background: var(--lime); box-shadow: 0 0 0 4px rgba(216,255,53,.14); animation: deck-pulse 1.5s ease-in-out infinite; }
+.race-deck-state.is-armed { border-color: rgba(227,179,65,.4); color: #f0d49a; }
+.race-deck-state.is-armed i { background: #e3b341; box-shadow: 0 0 0 4px rgba(227,179,65,.14); }
+@keyframes deck-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ---- the control bar, along the bottom -------------------------------------------------- */
+.race-deck-controls {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  padding: 12px; border: 1px solid #1d2630; border-radius: 16px;
+  background: linear-gradient(180deg, #0e151c, #080c11);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 18px 40px rgba(0,0,0,.4);
+}
+.race-deck-controls .race-deck-minor { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.deck-btn {
+  --face: #2b3644; --edge: #161d26; --ink: #e9f0e6;
+  position: relative; display: flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 58px; padding: 0 14px; border: 0; border-radius: 13px; cursor: pointer;
+  color: var(--ink); background: linear-gradient(180deg, color-mix(in srgb, var(--face) 88%, #fff) 0%, var(--face) 55%, color-mix(in srgb, var(--face) 82%, #000) 100%);
+  box-shadow: 0 5px 0 var(--edge), 0 10px 18px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22);
+  font: 800 13px/1 "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  letter-spacing: .11em; text-transform: uppercase;
+  transition: transform .08s ease, box-shadow .08s ease, filter .15s ease;
+}
+.deck-btn small { display: block; margin-top: 3px; font-size: 9px; font-weight: 700; letter-spacing: .1em; opacity: .62; }
+.deck-btn span { display: grid; }
+.deck-btn svg { flex: 0 0 auto; }
+
+.deck-btn:hover:not(:disabled) { filter: brightness(1.09); }
+/* The press travels the full height of the rim, so the button bottoms out against the deck. */
+.deck-btn:active:not(:disabled) { transform: translateY(5px); box-shadow: 0 0 0 var(--edge), 0 3px 8px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.14); }
+.deck-btn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+/* Dead, and visibly so: no rim to press, no gloss, and the cursor says it. */
+.deck-btn:disabled {
+  cursor: not-allowed; color: #5d6b7a;
+  background: linear-gradient(180deg, #161d26, #11171e);
+  box-shadow: inset 0 0 0 1px #1e2732; transform: none;
+}
+
+.deck-btn--prepare { --face: #b7ff39; --edge: #5f8a12; --ink: #12170e; }
+.deck-btn--start   { --face: #22a344; --edge: #0f5a23; --ink: #f0fff3; }
+.deck-btn--finish  { --face: #e07a1f; --edge: #8a4409; --ink: #fff6ec; }
+.deck-btn--ghost   { --face: #232d39; --edge: #131a22; --ink: #cfd8e2; min-height: 46px; font-size: 12px; }
+
+/* START is the one irreversible-feeling press, so when it is the move it breathes. */
+.deck-btn--start:not(:disabled) { animation: deck-ready 2.1s ease-in-out infinite; }
+@keyframes deck-ready {
+  0%, 100% { box-shadow: 0 5px 0 var(--edge), 0 10px 18px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22), 0 0 0 0 rgba(34,163,68,0); }
+  50%      { box-shadow: 0 5px 0 var(--edge), 0 10px 18px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22), 0 0 26px 3px rgba(34,163,68,.34); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .deck-btn--start:not(:disabled) { animation: none; }
+  .race-deck-state.is-live i { animation: none; }
+}
+
+/* ---- narrow desks ----------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .race-deck-controls { grid-template-columns: 1fr; }
+  .race-deck-head { flex-wrap: wrap; }
+  .race-deck-clock { font-size: 34px; }
+}
+
+/* ---------------------------------------------------------------------------------------
+   COURSES TERMINÉES — the saved races, under the deck.
+
+   Same dark console as the deck above it, but flat and quiet: this is a list to read, not a
+   console to operate, so nothing here is raised, lit or animated. Only the fastest lap and
+   the simulation badge carry colour, because those are the two things that change what the
+   numbers mean.
+   --------------------------------------------------------------------------------------- */
+
+.race-history { border: 1px solid #1d2630; border-radius: 14px; background: #090c0b; overflow: hidden; }
+
+.race-history-head, .race-history-row {
+  display: grid; grid-template-columns: minmax(200px, 2.2fr) 110px 100px 110px; align-items: center; gap: 12px;
+}
+.race-history-head {
+  min-height: 34px; padding: 0 14px; border-bottom: 1px solid #2b332d; background: #0c100e;
+  color: #5e6963; font-size: 9px; font-weight: 900; letter-spacing: .14em;
+}
+.race-history-row {
+  width: 100%; min-height: 48px; padding: 8px 14px; border: 0; border-bottom: 1px solid #202722;
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.race-history-row:last-child { border-bottom: 0; }
+.race-history-row:hover { background: rgba(216,255,53,.035); }
+.race-history-row.is-open { background: rgba(216,255,53,.05); }
+.race-history-row:focus-visible { outline: 2px solid var(--lime); outline-offset: -2px; }
+.race-history-row > span { font-size: 13px; color: #cfd8e2; }
+
+.race-history-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.race-history-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.race-history-name small { color: #5e6963; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* Amber, the colour the deck already uses for "armed but not real yet". */
+.race-history-sim {
+  flex: 0 0 auto; padding: 2px 7px; border: 1px solid rgba(227,179,65,.45); border-radius: 99px;
+  color: #e3b341; font-size: 9px; font-style: normal; font-weight: 900; letter-spacing: .1em;
+}
+
+.race-history-detail { padding: 10px 14px 16px; border-bottom: 1px solid #202722; background: #070a09; }
+.race-history-detail > div:last-child .race-history-laps { margin-bottom: 0; }
+.race-history-note { display: block; padding: 2px 0 8px 38px; font-size: 12px; color: #8aa0b6; }
+.race-history-warn {
+  display: flex; align-items: center; gap: 7px; margin: 0 0 8px; padding: 7px 10px;
+  border: 1px solid rgba(227,179,65,.35); border-radius: 9px; background: rgba(227,179,65,.07);
+  color: #f0d49a; font-size: 12px;
+}
+
+.race-history-grid { display: grid; grid-template-columns: 44px minmax(140px, 2fr) 60px 70px 110px; align-items: center; gap: 12px; }
+.race-history-grid--head {
+  min-height: 28px; color: #5e6963; font-size: 9px; font-weight: 900; letter-spacing: .14em;
+  border-bottom: 1px solid #202722;
+}
+.race-history-driver { min-height: 40px; font-size: 13px; color: #cfd8e2; }
+
+/* Wrapping columns, so a 60-lap endurance stays inside the panel instead of scrolling it. */
+.race-history-laps {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 2px 18px;
+  margin: 0 0 12px; padding: 0 0 2px 38px;
+}
+.race-history-laps > span { display: flex; gap: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .race-history-head, .race-history-row { grid-template-columns: minmax(140px, 2fr) 90px 80px; }
+  .race-history-head > span:nth-child(4), .race-history-row > span:nth-child(4) { display: none; }
+}
+
+/* A race the chrono never finished: the app was closed while it was still running, so the
+   clock and the duration are not a result. Amber, not red - nothing is broken, it is partial. */
+.race-history-partial { font-size: 9px; font-weight: 900; letter-spacing: .1em; font-style: normal;
+  padding: 2px 6px; border-radius: 4px; color: #0d0f08; background: #e3b341; }
+.race-history-more { width: 100%; padding: 10px; border: 1px dashed #253040; border-radius: 10px;
+  background: transparent; color: #8aa0b6; font: inherit; font-size: 12px; cursor: pointer; }
+.race-history-more:hover { border-color: #35435a; color: #cfd8e2; }
+.race-history-more small { opacity: .7; }

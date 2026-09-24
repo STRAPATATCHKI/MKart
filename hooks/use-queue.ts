@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type QueueStatus = "EN_ATTENTE" | "AU_GUICHET" | "PAYEE" | "EN_PISTE" | "TERMINEE" | "ABSENT" | "ANNULEE";
+export type QueueStatus = "EN_ATTENTE" | "AU_GUICHET" | "PAYEE" | "EN_PISTE" | "TERMINEE" | "ABSENT" | "ANNULEE" | "SUPPRIMEE";
 
 export const QUEUE_STATUS_LABELS: Record<QueueStatus, string> = {
   EN_ATTENTE: "En attente",
@@ -18,6 +18,7 @@ export const QUEUE_STATUS_LABELS: Record<QueueStatus, string> = {
   TERMINEE: "Terminée",
   ABSENT: "Absent",
   ANNULEE: "Annulée",
+  SUPPRIMEE: "Supprimée",
 };
 
 export type QueuePilot = {
@@ -42,7 +43,28 @@ export type Reservation = {
   createdAt: string;
   paidAt: string | null;
   paidBy: string | null;
+  /** Dirhams actually collected. Null on reservations cashed before amounts were recorded. */
+  paidAmount?: number | null;
+  /** In the bin (status SUPPRIMEE): when, by whom, and the status "Restaurer" puts back. */
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deletedFrom?: QueueStatus | null;
+  /** The pack as corrected at the counter, priced by the desk from the catalog. Null: the client's own choice. */
+  packOverride?: PackOverride | null;
   sessionId: string | null;
+};
+
+export type PackOverride = {
+  id: string;
+  label: string;
+  basis: "personne" | "groupe";
+  price: number;
+  total: number | null;
+  pilots: number;
+  /** Whether the offer is meant for this many pilots; the cashier may choose one that is not. */
+  fits: boolean;
+  by: string | null;
+  at: string;
 };
 
 export type QueueView = {
@@ -53,10 +75,16 @@ export type QueueView = {
   error: string | null;
   lastSync: string | null;
   refresh: () => Promise<void>;
-  pay: (code: string, mode: Reservation["paymentMethod"], by: string) => Promise<void>;
+  pay: (code: string, mode: Reservation["paymentMethod"], by: string, amount: number | null) => Promise<void>;
   unpay: (code: string) => Promise<void>;
   setStatus: (code: string, status: QueueStatus) => Promise<void>;
   assignKarts: (code: string, karts: Record<string, number>, sessionId?: string) => Promise<void>;
+  /** To the Supprimées page, back from it, or erased for good (only from there). */
+  remove: (code: string, by: string) => Promise<void>;
+  restore: (code: string) => Promise<void>;
+  erase: (code: string) => Promise<void>;
+  /** Change the pack at the counter; null returns to the client's own choice. */
+  setPack: (code: string, offerId: string | null, by: string) => Promise<void>;
   addWalkIn: (input: { contactName: string; phone?: string; pilots: { fullName: string; kartColor: string }[]; paymentMethod: string }) => Promise<Reservation | null>;
 };
 
@@ -122,10 +150,24 @@ export function useQueue(pollMs = 4000): QueueView {
     error,
     lastSync,
     refresh,
-    pay: useCallback((code, mode, by) => act(code, "paiement", { mode, par: by }), [act]),
+    pay: useCallback((code, mode, by, amount) => act(code, "paiement", { mode, par: by, montant: amount }), [act]),
     unpay: useCallback((code) => act(code, "annuler-paiement", {}), [act]),
     setStatus: useCallback((code, statut) => act(code, "statut", { statut }), [act]),
     assignKarts: useCallback((code, karts, sessionId) => act(code, "karts", { karts, sessionId }), [act]),
+    setPack: useCallback((code, offerId, by) => act(code, "formule", { offerId, par: by }), [act]),
+    remove: useCallback((code, by) => act(code, "supprimer", { par: by }), [act]),
+    restore: useCallback((code) => act(code, "restaurer", {}), [act]),
+    erase: useCallback(async (code: string) => {
+      try {
+        const r = await fetch(`/api/queue/${encodeURIComponent(code)}/effacer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        if (!r.ok) throw new Error(String(r.status));
+        setReservations((list) => list.filter((x) => x.code !== code));
+        setError(null);
+      } catch {
+        setError("Effacement non enregistré. Vérifiez la borne et réessayez.");
+        void refresh();
+      }
+    }, [refresh]),
     addWalkIn: useCallback(async (input) => {
       try {
         const r = await fetch("/api/reservations", {

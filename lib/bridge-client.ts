@@ -68,6 +68,15 @@ export type Signup = {
   color?: number; // pilot colour picked on the phone (1-8, see public/drivers)
   team?: SignupPlayer[]; // friends added in the same sign-up
   waiver: boolean;
+  pack?: string | null;           // pack id chosen at sign-up
+  packLabel?: string | null;      // its human name, e.g. "2 courses"
+  packPriceMad?: number | null;   // per driver
+  packTotalMad?: number | null;   // what the caisse must collect: price x pilots, or the group price
+  packBasis?: "personne" | "groupe" | null;   // a group offer's price covers the whole group
+  packPeriod?: "unique" | "semaine" | "mois" | null;
+  charter?: string; // version of the charte de bonne conduite that was signed
+  signature?: string; // the signature itself, a PNG data URL drawn on the phone
+  signedAt?: number; // epoch ms, when it was signed
   offers: boolean;
   status: "new" | "assigned" | "archived";
   queueCode?: string | null; // reservation code in the caisse queue (Liste d'attente)

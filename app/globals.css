@@ -2,6 +2,11 @@
 @import "./big-screen.css";
 @import "./souvenir.css";
 @import "./fuel.css";
+@import "./race-deck.css";
+@import "./catalog.css";
+@import "./clients.css";
+@import "./overview.css";
+@import "./system.css";
 @import "./reservation.css";
 @import "./chrono.css";
 @import "./file-attente.css";
@@ -96,6 +101,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--lime); outl
 }
 .sidebar nav button.active svg { color: var(--lime); }
 .sidebar nav button span { flex: 1; }
+/* Waiting-queue count. Lime, not the live dot's red: red already means "a race is running",
+   and two red marks in one nav would say the same thing about different things. */
+.nav-badge { min-width: 19px; height: 19px; padding: 0 6px; border-radius: 99px; display: inline-flex;
+  align-items: center; justify-content: center; background: var(--lime); color: #0b0e05;
+  font-size: 11px; font-weight: 800; font-style: normal; line-height: 1; }
+.sidebar nav button.active .nav-badge { box-shadow: 0 0 0 3px rgba(216,255,53,.14); }
 .live-dot { width: 7px; height: 7px; border-radius: 99px; background: #ff625f; box-shadow: 0 0 0 4px rgba(255,98,95,.09); }
 .sidebar-bottom { margin-top: auto; }
 .system-status {

@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "dist/client",
+    "public": "dist/inscription",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -8,8 +8,16 @@
     ],
     "rewrites": [
       {
-        "source": "**",
-        "destination": "/index.html"
+        "source": "/",
+        "destination": "/inscription.html"
+      },
+      {
+        "source": "/s",
+        "destination": "/app.html"
+      },
+      {
+        "source": "/s/**",
+        "destination": "/app.html"
       }
     ],
     "redirects": [

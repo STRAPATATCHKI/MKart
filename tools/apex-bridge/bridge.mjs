@@ -26,15 +26,22 @@ import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DRIVER_COLORS, SIGNUP_PAGE } from "./signup-page.mjs";
+import { DRIVER_COLORS, PACKS, SIGNUP_PAGE } from "./signup-page.mjs";
 import { createChrono } from "./chrono.mjs";
 import { createKartMap } from "./kart-map.mjs";
+import { cloudConfigured, cloudGet, cloudPatch, cloudPut } from "./cloud.mjs";
+import { SEED_OFFERS, offerFits, offerTotal } from "../../lib/offer-rules.mjs";
+import { startReportSync } from "./cloud-reports.mjs";
 
 const HOST = process.env.APEX_HOST ?? "127.0.0.1";
 const FEED_PORT = Number(process.env.APEX_FEED_PORT ?? 30001);
 const HTTP_PORT = Number(process.env.BRIDGE_PORT ?? 8787);
 const REPLAY = process.env.APEX_REPLAY || null; // path to a capture.log to replay (dev/demo)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BRIDGE_STARTED_AT = Date.now();
+// The code this process runs; newer on disk than BRIDGE_STARTED_AT means a restart is due.
+const BRIDGE_CODE = ["bridge.mjs", "signup-page.mjs", "cloud.mjs", "chrono.mjs", "kart-map.mjs", "cloud-reports.mjs", "report-docs.mjs"].map((f) => path.join(__dirname, f))
+  .concat(path.join(__dirname, "..", "..", "lib", "offer-rules.mjs"));
 const OUT_DIR = path.join(__dirname, "out");
 fs.mkdirSync(OUT_DIR, { recursive: true });
 const CAPTURE = path.join(OUT_DIR, "capture.log");
@@ -220,6 +227,12 @@ function buildSignup(body) {
   const height = Number.isFinite(+body.height) && +body.height >= 100 && +body.height <= 220 ? Math.round(+body.height) : null;
   if (height == null) return "Indiquez la taille du pilote.";
   if (body.waiver !== true) return "Règlement de piste non accepté.";
+  // The charte de bonne conduite is signed on the phone at step 2; a sign-up without that
+  // signature is not a sign-up. Stored as a PNG data URL, as drawn.
+  const signature = typeof body.signature === "string" ? body.signature : "";
+  if (!signature.startsWith("data:image/png;base64,") || signature.length < 200) return "Charte non signée.";
+  if (signature.length > 120_000) return "Signature trop lourde.";
+  const charter = cleanText(body.charter, 24) || "charte-v1";
 
   const rawTeam = Array.isArray(body.team) ? body.team.slice(0, 11) : [];
   const used = new Set([colorOr(body.color, 1)]);
@@ -241,6 +254,11 @@ function buildSignup(body) {
     used.add(color);
     team.push({ name: mateName, phone: matePhone, age: mateAge, email: mateEmail || null, color, ...playerCategory(mateAge, mateHeight) });
   }
+  // The phone chooses a PACK, never a price. The amount owed is computed here from the catalog
+  // and the actual roster, so a tampered request cannot change what the client pays - nor buy
+  // a group price for a group the offer is not for.
+  const priced = priceSignup(cleanText(body.pack, 40), 1 + team.length);
+  if (priced.error) return priced.error;
 
   const id = `C-${Date.now().toString(36).toUpperCase()}`;
   return {
@@ -256,16 +274,123 @@ function buildSignup(body) {
     color: colorOr(body.color, 1),
     team,
     waiver: true,
+    ...priced.fields,
+    charter,
+    signature,
+    signedAt: Number.isFinite(+body.signedAt) ? Math.round(+body.signedAt) : Date.now(),
     offers: body.offers === true,
     status: "new", // new → assigned (put in a session) → archived
   };
+}
+
+// ---------------------------------------------------- the offer catalog
+// The dashboard's Packs & ventes page is the one place offers are edited; the desk keeps them in
+// catalog.json. The bridge reads them from there every 30 s (and at once when the dashboard
+// saves), prices every sign-up with them, serves them to the local form at /catalog.json and
+// publishes them to the Realtime Database for the hosted form. Offers are public marketing
+// text - names, prices, descriptions - never anything about a client.
+//
+// If the desk cannot be reached, the last catalog read is kept; a bridge that never reached a
+// desk (the one on Render) reads the published copy instead, and never publishes over it.
+const CATALOG_SYNC_MS = 30_000;
+let catalog = { offers: SEED_OFFERS, savedAt: null, source: "seed" };
+let catalogPublished = null;
+let catalogWarned = false;
+
+function publicCatalog() {
+  return { offers: catalog.offers.filter((o) => o && o.enabled !== false), savedAt: catalog.savedAt || null, source: catalog.source };
+}
+
+async function refreshCatalog() {
+  let fromDesk = false;
+  try {
+    const res = await fetch(`${DESK_URL}/api/catalog`, { signal: AbortSignal.timeout(4000) });
+    const type = res.headers.get("content-type") || "";
+    if (res.ok && type.includes("application/json")) {
+      const body = await res.json();
+      fromDesk = true;
+      catalog = body && Array.isArray(body.offers) && body.offers.length
+        ? { offers: body.offers, savedAt: body.savedAt || null, source: "desk" }
+        // The desk answered but nobody has edited the catalog yet: the dashboard shows the
+        // seed, so the form must show the same seed.
+        : { offers: SEED_OFFERS, savedAt: null, source: "seed" };
+    } else if (!catalogWarned) {
+      catalogWarned = true;
+      console.log("[catalog] the desk does not serve /api/catalog yet (restart it): using the last known offers");
+    }
+  } catch { /* desk unreachable: keep what we have */ }
+
+  if (!cloudConfigured()) return;
+  if (!fromDesk) {
+    // A bridge that has read the desk keeps the desk's copy through an outage.
+    if (catalog.source === "desk") return;
+    // Never reached a desk: follow the published catalog, so online sign-ups are priced with it.
+    try {
+      const published = await cloudGet("catalog.json");
+      if (published && Array.isArray(published.offers) && published.offers.length) {
+        catalog = { offers: published.offers, savedAt: published.savedAt || null, source: "cloud" };
+      }
+    } catch { /* keep the seed */ }
+    return;
+  }
+  const body = publicCatalog();
+  const fingerprint = JSON.stringify(body);
+  if (fingerprint === catalogPublished) return;
+  try {
+    await cloudPut("catalog.json", { ...body, publishedAt: Date.now() });
+    catalogPublished = fingerprint;
+    console.log(`[catalog] ${body.offers.length} offres publiées pour le formulaire en ligne`);
+  } catch (e) {
+    console.log(`[catalog] publication impossible: ${e.message}`);
+  }
+}
+setInterval(() => { refreshCatalog().catch(() => {}); }, CATALOG_SYNC_MS);
+setTimeout(() => { refreshCatalog().catch(() => {}); }, 1_000);
+
+// Forms built before the catalog sent p1/p2/p3; honour them while such a page can still be open.
+const legacyPack = (id) => PACKS.find((p) => p.id === id && p.enabled) || null;
+
+/** The pack fields stored on a sign-up, or an error for the phone. */
+function priceSignup(packId, pilots) {
+  const none = { pack: null, packLabel: null, packPriceMad: null, packTotalMad: null, packBasis: null, packPeriod: null };
+  if (!packId) return { fields: none };
+  const offer = catalog.offers.find((o) => o && o.id === packId && o.enabled !== false);
+  if (offer) {
+    if (!offerFits(offer, pilots)) {
+      return { error: `La formule « ${offer.name} » ne correspond pas à ${pilots} pilote${pilots > 1 ? "s" : ""}. Choisissez-en une autre.` };
+    }
+    return { fields: {
+      pack: offer.id, packLabel: offer.name,
+      packPriceMad: Math.round(Number(offer.price)) || 0,        // the catalog price: per person, or for the group
+      packTotalMad: offerTotal(offer, pilots),                   // what the counter collects
+      packBasis: offer.basis === "groupe" ? "groupe" : "personne",
+      packPeriod: offer.period || "unique",
+    } };
+  }
+  const legacy = legacyPack(packId);
+  if (legacy) {
+    return { fields: { ...none, pack: legacy.id, packLabel: legacy.label, packPriceMad: legacy.priceMad,
+                       packTotalMad: legacy.priceMad * pilots, packBasis: "personne", packPeriod: "unique" } };
+  }
+  return { error: "Cette formule n'est plus proposée. Rechargez la page et choisissez-en une autre." };
+}
+
+function pricedOrFlagged(packId, pilots) {
+  const priced = priceSignup(packId, pilots);
+  if (!priced.error) return priced.fields;
+  const offer = catalog.offers.find((o) => o && o.id === packId);
+  return { pack: packId || null, packLabel: `${offer ? offer.name : packId} · à vérifier`,
+           packPriceMad: null, packTotalMad: null, packBasis: null, packPeriod: null };
 }
 
 // ---------------------------------------------------- hand-off to the reservation desk
 // A group that signed up on a phone belongs in the caisse queue BEFORE it reaches a session:
 // the desk server (tools/reservations/desk.mjs) owns payment, so we hand the group over and
 // keep the queue code on the sign-up. The desk stays the single source of truth for money.
-const DESK_URL = process.env.DESK_URL || "http://127.0.0.1:8788";
+// 5190: the desk server moved there so the dashboard keeps the address (and the browser
+// storage) the venue already uses. Two desks on two ports each keep their own copy of the
+// queue in memory, so pointing this at the wrong one loses sign-ups from the operator's view.
+const DESK_URL = process.env.DESK_URL || "http://127.0.0.1:5190";
 
 async function sendSignupToDesk(entry) {
   const players = signupPlayers(entry);
@@ -277,6 +402,11 @@ async function sendSignupToDesk(entry) {
     // an avatar, not a kart, so we leave the desk to default it and the cashier assigns karts.
     pilots: players.map((p) => ({ fullName: p.name })),
     paymentMethod: "Espèces",
+    // What the cashier must collect: the pack, its per-driver price, and the total for this
+    // group. Computed here, not sent by the phone.
+    pack: entry.pack || null,
+    packLabel: entry.packLabel || null,
+    amountMad: entry.packTotalMad ?? null,
   };
   const post = (channel) =>
     fetch(`${DESK_URL}/api/reservations`, {
@@ -299,6 +429,94 @@ async function sendSignupToDesk(entry) {
 }
 
 /** Remember where the sign-up landed in the queue, so the dashboard can show its payment state. */
+// ---------------------------------------------------------------------------------------------
+// QR sign-ups made ONLINE (the printed poster -> mega-karts.web.app/i) write straight to the
+// Realtime Database and never pass through this PC. Without this, they never reach the caisse:
+// no queue entry, no "encaisser", no kart. So the bridge pulls them in, the same way a venue
+// Wi-Fi sign-up arrives, and hands them to the desk. From then on they are ordinary sign-ups.
+//
+// Needs the service-account key (cloud.mjs); without it this is a no-op and says so once.
+const CLOUD_SYNC_MS = 20_000;
+let cloudSyncWarned = false;
+
+function cloudToLocal(id, c) {
+  const created = typeof c.createdAt === "number" ? new Date(c.createdAt) : new Date();
+  const players = Object.values(c.players || {}).filter((p) => p && p.name);
+  const mates = players.slice(1);   // the first player is the registrant, already the entry itself
+  const used = new Set([colorOr(c.color, 1)]);
+  const team = mates.map((m) => {
+    let color = colorOr(m.color, 0);
+    if (!color || used.has(color)) color = COLOR_IDS.find((x) => !used.has(x)) ?? color ?? 1;
+    used.add(color);
+    return { name: String(m.name).slice(0, 60), phone: m.phone ? String(m.phone).slice(0, 24) : "",
+             age: Number(m.age) || 0, email: m.email || null, color,
+             ...playerCategory(Number(m.age) || 0, Number(m.height) || null) };
+  });
+  return {
+    id, code: id.slice(-4), createdAt: created.toISOString(),
+    name: String(c.name || "").slice(0, 60), phone: String(c.phone || "").slice(0, 24),
+    email: c.email || null, birthdate: null, age: Number(c.age) || 0,
+    ...playerCategory(Number(c.age) || 0, Number(c.height) || null),
+    color: colorOr(c.color, 1), team, waiver: true,
+    // Already saved online, so never refused here: a pack that does not fit is shown to the
+    // cashier as "à vérifier" with no amount, rather than losing the client.
+    ...pricedOrFlagged(c.pack ? String(c.pack).slice(0, 40) : "", 1 + team.length),
+    charter: c.charter || null, signature: c.signature || null, signedAt: c.signedAt || null,
+    offers: c.offers === true, status: "new", source: "qr-online",
+  };
+}
+
+async function syncCloudSignups() {
+  if (!cloudConfigured()) {
+    if (!cloudSyncWarned) {
+      cloudSyncWarned = true;
+      console.log("[cloud] no service-account key: online QR sign-ups will NOT be imported to the caisse");
+    }
+    return;
+  }
+  let cloud;
+  try {
+    cloud = await cloudGet('signups.json?orderBy="createdAt"&limitToLast=100');
+  } catch (e) {
+    console.log(`[cloud] read failed: ${e.message}`);
+    return;
+  }
+  if (!cloud || typeof cloud !== "object") return;
+  const list = readSignups();
+  const known = new Set(list.map((s) => s.id));
+  let imported = 0;
+  for (const [id, c] of Object.entries(cloud)) {
+    if (!c || known.has(id) || c.status !== "new") continue;
+    // A sign-up older than a day is not a client at the counter, it is a test or a no-show.
+    // Marked stale in the cloud rather than skipped, so it is never re-examined - and never
+    // dropped into the queue on some later restart.
+    if (typeof c.createdAt === "number" && Date.now() - c.createdAt > CLOUD_MAX_AGE_MS) {
+      cloudPatch(`signups/${id}`, { status: "stale" }).catch(() => {});
+      continue;
+    }
+    const entry = cloudToLocal(id, c);
+    if (entry.name.length < 2) continue;
+    list.unshift(entry);
+    known.add(id);
+    imported += 1;
+    // Mark it on the cloud side so another bridge (Render) does not import it again.
+    cloudPatch(`signups/${id}`, { status: "imported", importedBy: os.hostname(), importedAt: Date.now() })
+      .catch((e) => console.log(`[cloud] mark ${id} failed: ${e.message}`));
+    void sendSignupToDesk(entry).then((result) => recordQueueCode(entry.id, result));
+  }
+  if (imported) {
+    writeSignups(list);
+    console.log(`[cloud] imported ${imported} online sign-up${imported > 1 ? "s" : ""} -> caisse`);
+  }
+}
+const CLOUD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+setInterval(() => { syncCloudSignups().catch((e) => console.log(`[cloud] sync error: ${e.message}`)); }, CLOUD_SYNC_MS);
+
+// Revenue and races for the manager's app: payments, day totals, reservations, every saved race
+// and the race on track, pushed to /reports (cloud-reports.mjs). Readable only by /staff accounts.
+startReportSync({ deskUrl: DESK_URL, readSignups, stateFile: path.join(OUT_DIR, "cloud-reports.json") });
+setTimeout(() => { syncCloudSignups().catch(() => {}); }, 3_000);
+
 function recordQueueCode(id, result) {
   const list = readSignups();
   const row = list.find((s) => s.id === id);
@@ -769,6 +987,24 @@ const server = http.createServer((req, res) => {
       .catch((e) => { res.writeHead(e.status || 400, cors); res.end(e.message); });
     return;
   }
+  if (url === "/catalog.json") {
+    // The offers the local form shows: public, like the form itself.
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors });
+    res.end(JSON.stringify(publicCatalog()));
+    return;
+  }
+  if (url === "/catalog/sync") {
+    // The dashboard just saved the catalog: read it now instead of within 30 s.
+    if (req.method !== "POST") { res.writeHead(405, cors); res.end("method not allowed"); return; }
+    if (!isLoopback(req)) { res.writeHead(403, cors); res.end("forbidden"); return; }
+    refreshCatalog()
+      .catch(() => {})
+      .then(() => {
+        res.writeHead(200, { "Content-Type": "application/json", ...cors });
+        res.end(JSON.stringify({ ok: true, source: catalog.source, offers: publicCatalog().offers.length, published: catalogPublished != null }));
+      });
+    return;
+  }
   if (url === "/inscription") {
     // The form itself: any phone on the venue Wi-Fi may open it.
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
@@ -791,7 +1027,8 @@ const server = http.createServer((req, res) => {
     if (req.method !== "POST") { res.writeHead(405, cors); res.end("method not allowed"); return; }
     const ip = (req.socket && req.socket.remoteAddress) || "?";
     if (rateLimited(ip)) { res.writeHead(429, cors); res.end("Trop d'inscriptions depuis cet appareil. Voyez l'accueil."); return; }
-    readJsonBody(req, 8 * 1024)
+    // Room for the signed charter: the signature travels as a PNG data URL, so 8 KB is not enough.
+    readJsonBody(req, 256 * 1024)
       .then((body) => {
         const entry = buildSignup(body);
         if (typeof entry === "string") { res.writeHead(400, cors); res.end(entry); return; }
@@ -845,7 +1082,10 @@ const server = http.createServer((req, res) => {
       .flat()
       .filter((n) => n && n.family === "IPv4" && !n.internal)
       .map((n) => n.address);
-    res.end(JSON.stringify({ ok: true, connected: state.connected, feed: state.source, version: state.version, port: HTTP_PORT, addresses }));
+    // startedAt / stale: the dashboard's Synchroniser card compares them to the code on disk.
+    const codeUpdatedAt = Math.max(0, ...BRIDGE_CODE.map((f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }));
+    res.end(JSON.stringify({ ok: true, connected: state.connected, feed: state.source, version: state.version, port: HTTP_PORT, addresses,
+                             startedAt: BRIDGE_STARTED_AT, codeUpdatedAt, stale: codeUpdatedAt > BRIDGE_STARTED_AT, pid: process.pid }));
   } else if (url === "/history") {
     res.writeHead(200, { "Content-Type": "application/json", ...cors });
     res.end(JSON.stringify(readHistory()));

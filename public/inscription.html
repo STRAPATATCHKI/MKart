@@ -11,6 +11,27 @@
 <style>
   :root { --ink:#050604; --surface:#0e110d; --surface-2:#141811; --line:#262d24; --text:#f4f6ed; --muted:#8a9185; --lime:#d8ff35; --danger:#ff6b69;
     --display:"Barlow Condensed","Arial Narrow","Segoe UI",sans-serif; }
+  /* Day / night. The night palette above is the default; between DAY_FROM and DAY_UNTIL the
+     same tokens are swapped for a light set, so every rule below keeps working untouched.
+     Karting runs from late morning into the night, and a phone screen that is readable in
+     the sun at 14h is dazzling in the paddock at 22h. */
+  body.day { --ink:#eef1e7; --surface:#ffffff; --surface-2:#f6f8f1; --line:#cfd6c6; --text:#10140d;
+    --muted:#5d6656; --lime:#4e6b00; --danger:#c62f2c; }
+  body.day { background:radial-gradient(120% 45% at 50% -10%, rgba(78,107,0,.10), transparent 60%), var(--ink); }
+  /* The logo is drawn in light ink, so on a pale page it needs its own dark plate. */
+  body.day .logo { background-color:#0e110d; border-radius:10px; padding:6px; }
+  body.day .pad { border-color:#b9c3ac; }
+  body.day .pad .baseline { border-bottom-color:#c3cbb7; }
+  body.day .pad .hint { color:#8a937f; }
+  body.day .chip-senior { color:#2b3320; background:#e3ead5; border-color:#c3cdb2; }
+  body.day .chip-warn { color:#9d211c; background:rgba(157,33,28,.09); border-color:rgba(157,33,28,.35); }
+  body.day .error { color:#9d211c; background:rgba(157,33,28,.07); }
+  body.day .rules b { color:#9d211c; }
+  body.day .ghost { border-color:#b3bda6; }
+  body.day .wheel-line { border-color:rgba(78,107,0,.5); background:rgba(78,107,0,.07); }
+  body.day .lang-btn:active { background:rgba(78,107,0,.08); }
+  .theme-toggle { margin-inline-start:auto; width:40px; height:40px; flex:0 0 auto; border:1px solid var(--line);
+    border-radius:50%; background:var(--surface); color:var(--text); font-size:17px; line-height:1; cursor:pointer; }
   * { box-sizing:border-box; }
   body { margin:0; min-height:100dvh; padding:20px 16px 40px; color:var(--text);
     background:radial-gradient(120% 45% at 50% -10%, rgba(216,255,53,.14), transparent 60%), var(--ink);
@@ -33,16 +54,22 @@
     color:var(--text); background:var(--surface-2); font:inherit; font-size:16px; }
   input:focus-visible, button:focus-visible { outline:2px solid var(--lime); outline-offset:1px; }
   /* Age / height wheel: a snapping scroller, so a phone never opens the keyboard for a number */
-  .wheel { position:relative; border:1px solid var(--line); border-radius:12px; background:var(--surface-2); overflow:hidden; }
+  .wheel { position:relative; border:1px solid var(--line); border-radius:12px; background:var(--surface-2); overflow:hidden;
+    -webkit-user-select:none; user-select:none; }
   .wheel-line { position:absolute; left:0; right:0; top:44px; height:44px; border-top:1px solid rgba(216,255,53,.45); border-bottom:1px solid rgba(216,255,53,.45);
     background:rgba(216,255,53,.06); pointer-events:none; }
-  .wheel-scroll { position:relative; height:132px; overflow-y:auto; scroll-snap-type:y mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  /* Dragging a wheel must scroll it, not select its text: without user-select:none a finger
+     drag highlights "148 cm" instead of moving the wheel, which is what a phone does by
+     default with any text it can select. */
+  .wheel-scroll { position:relative; height:132px; overflow-y:auto; scroll-snap-type:y mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; }
   .wheel-scroll::-webkit-scrollbar { display:none; }
-  .wheel-item { height:44px; display:grid; place-items:center; scroll-snap-align:center; color:var(--muted); font:800 19px/1 var(--display); letter-spacing:.04em; cursor:pointer; }
+  .wheel-item { height:44px; display:grid; place-items:center; scroll-snap-align:center; color:var(--muted); font:800 19px/1 var(--display); letter-spacing:.04em; cursor:pointer;
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   .wheel-item.on { color:var(--lime); font-size:27px; font-weight:900; }
   .wheel-pad { height:44px; }
   .chips { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-  .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border-radius:999px; font-size:12px; font-weight:900; letter-spacing:.06em; }
+  .chip { -webkit-user-select:none; user-select:none; display:inline-flex; align-items:center; gap:6px; padding:6px 11px; border-radius:999px; font-size:12px; font-weight:900; letter-spacing:.06em; }
   .chip-cadet { color:#0b0e05; background:var(--lime); }
   .chip-senior { color:var(--text); background:#2b3327; border:1px solid var(--line); }
   .chip-warn { color:#ffb0ae; background:rgba(255,107,105,.1); border:1px solid rgba(255,107,105,.4); font-weight:700; letter-spacing:0; }
@@ -54,6 +81,48 @@
   .color.selected { border-color:var(--lime); background:rgba(216,255,53,.1); }
   .color.selected b { color:var(--text); }
   .color.taken { opacity:.28; pointer-events:none; }
+  /* Packs: one card per tier, priced per driver. The live total under them is the number the
+     client will actually pay at the desk, so it is computed from the roster, not typed. */
+  .lang-gate { max-width:26rem; padding-top:8vh; }
+  .lang-btn { display:grid; gap:2px; width:100%; padding:20px 18px; margin-top:12px; border:2px solid var(--line);
+    border-radius:14px; background:var(--surface); color:var(--text); text-align:center; cursor:pointer; }
+  .lang-btn b { font:900 26px/1 var(--display); letter-spacing:.02em; }
+  .lang-btn small { color:var(--muted); font-size:13px; font-weight:600; }
+  .lang-btn:active { border-color:var(--lime); background:rgba(216,255,53,.08); }
+  /* Arabic: the whole page flips, so labels, fields and buttons read right to left. */
+  body.ar { direction:rtl; }
+  /* Barlow Condensed has no Arabic, so the headings fell back to a slanted, squeezed face.
+     Arabic gets an upright system face at its own weight instead. */
+  body.ar h1, body.ar h2, body.ar .player-head strong, body.ar .lang-btn b, body.ar .code {
+    font-family:"Segoe UI",Tahoma,"Noto Naskh Arabic",system-ui,sans-serif; font-style:normal;
+    font-weight:800; letter-spacing:0; line-height:1.25; }
+  body.ar h1 { font-size:27px; text-transform:none; }
+  body.ar input, body.ar .wheel-item { text-align:right; }
+  body.ar .pack { direction:rtl; }
+  body.ar .ar { direction:rtl; text-align:right; }
+  .packs { display:grid; gap:10px; }
+  .pack { display:grid; grid-template-columns:1fr auto; align-items:center; gap:10px; padding:13px 14px;
+    border:2px solid var(--line); border-radius:12px; background:var(--surface-2); cursor:pointer;
+    -webkit-user-select:none; user-select:none; }
+  .pack.selected { border-color:var(--lime); background:rgba(216,255,53,.08); }
+  .pack { border-left:5px solid var(--pack, var(--line)); }
+  .pack.selected { border-left-color:var(--pack, var(--lime)); }
+  .pack .pack-vol { color:var(--text, inherit); opacity:.8; font-weight:700; }
+  .pack .price s { display:block; color:var(--muted); font-size:12px; font-weight:700; margin-bottom:2px; }
+  .pack-reco { display:inline-block; margin-inline-start:6px; padding:2px 6px; border-radius:4px; vertical-align:middle;
+    background:var(--lime); color:#0b0e05; font:900 9px/1.3 system-ui,sans-serif; letter-spacing:.06em; text-transform:uppercase; }
+  .pack-group { margin:6px 2px -2px; color:var(--muted); font-size:11px; font-weight:900; letter-spacing:.1em; text-transform:uppercase; }
+  .pack-hint { margin:-4px 0 4px; font-size:13px; font-weight:700; color:var(--lime); }
+  .pack-none { margin:0; padding:14px; border:1px dashed var(--line); border-radius:12px; color:var(--muted); font-size:13px; }
+  .pack b { display:block; font:900 17px/1.1 var(--display); letter-spacing:.02em; text-transform:uppercase; }
+  .pack .ar { direction:rtl; text-align:left; font-size:13px; color:var(--muted); margin-top:2px; }
+  .pack small { display:block; color:var(--muted); font-size:12px; font-weight:600; margin-top:3px; }
+  .pack .price { text-align:right; color:var(--lime); font:900 22px/1 var(--display); white-space:nowrap; }
+  .pack .price small { display:block; color:var(--muted); font-size:10px; font-weight:700; margin-top:3px; }
+  .pack-total { display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    padding:12px 14px; border:1px solid rgba(216,255,53,.4); border-radius:10px;
+    background:rgba(216,255,53,.07); font-size:13px; font-weight:700; }
+  .pack-total b { color:var(--lime); font:900 24px/1 var(--display); }
   .check { display:grid; grid-template-columns:24px 1fr; gap:10px; align-items:start; padding:12px 14px;
     border:1px solid var(--line); border-radius:10px; background:var(--surface); font-size:13px; font-weight:600; line-height:1.45; }
   .check input { width:24px; height:24px; accent-color:var(--lime); margin:0; }
@@ -76,66 +145,155 @@
   .roster img { width:34px; height:34px; object-fit:contain; }
   .roster b { flex:1; font-size:14px; }
   footer { color:var(--muted); font-size:11px; line-height:1.5; text-align:center; }
+  /* Charte de bonne conduite — step 2, between the filled form and the code. Every rule is shown
+     in French and in Arabic: a client signs nothing here that they cannot read. */
+  .charter { display:grid; gap:14px; }
+  .charter-head { display:grid; gap:5px; justify-items:center; text-align:center; }
+  .charter-head h2 { margin:0; font:italic 900 28px/1 var(--display); text-transform:uppercase; }
+  .charter-head .ar { color:var(--lime); font-size:20px; font-weight:800; }
+  .charter-intro { margin:0; padding:11px 13px; border:1px solid var(--line); border-radius:10px;
+    background:var(--surface-2); font-size:13px; font-weight:700; line-height:1.5; }
+  .rules { margin:0; list-style:none; display:grid; gap:11px; max-height:48vh; overflow-y:auto;
+    padding:13px; border:1px solid var(--line); border-radius:12px; background:var(--surface); -webkit-overflow-scrolling:touch; }
+  .rules li { display:grid; gap:4px; padding-bottom:11px; border-bottom:1px solid var(--line); }
+  .rules li:last-child { padding-bottom:0; border-bottom:0; }
+  .rules .n { color:var(--lime); font:900 13px/1 var(--display); letter-spacing:.14em; }
+  .rules .fr { font-size:13px; line-height:1.5; }
+  .rules b { color:#ffb0ae; }
+  /* Arabic runs right-to-left; give it a little more line-height, the script needs the room. */
+  .ar { direction:rtl; text-align:right; font-size:14px; line-height:1.75; color:var(--muted); }
+  .charter-head .ar, .charter-mark { text-align:center; }
+  .sign-label { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px; font-size:13px; font-weight:700; }
+  .sign-label .ar { font-size:13px; }
+  .pad { position:relative; height:190px; border:1px dashed #3a4335; border-radius:12px; background:var(--surface-2); overflow:hidden; }
+  /* touch-action:none — otherwise dragging a finger scrolls the page instead of drawing. */
+  .pad canvas { display:block; width:100%; height:100%; touch-action:none; }
+  .pad .baseline { position:absolute; left:18px; right:18px; bottom:46px; border-bottom:1px solid #343d2e; pointer-events:none; }
+  .pad .hint { position:absolute; inset:auto 0 18px; text-align:center; color:#5d6557; font-size:12px; font-weight:700; pointer-events:none; }
+  /* One card per pilot: name, pad, erase. A pilot with a signature turns lime, so at a glance
+     the operator (and the client) can see who is still missing. */
+  .sign-card { display:grid; gap:8px; padding:12px; margin-bottom:12px; border:1px solid var(--line);
+    border-radius:12px; background:var(--surface); }
+  .sign-card.signed { border-color:var(--lime); }
+  .sign-card .who { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:14px; font-weight:800; }
+  .sign-card .state { font-size:11px; font-weight:900; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+  .sign-card.signed .state { color:var(--lime); }
+  .charter-mark { margin:0; color:var(--lime); font:900 12px/1.6 var(--display); letter-spacing:.2em; text-transform:uppercase; }
   @keyframes spin { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion:reduce) { .done .wheel-img { animation:none; } }
 </style>
 </head>
 <body>
-<div class="wrap">
+<!-- Language gate: the first thing after scanning the QR. The whole form then speaks ONE
+     language - side-by-side bilingual text doubles the reading for everybody. -->
+<div class="wrap lang-gate" id="langGate">
+  <header>
+    <div class="logo" role="img" aria-label="MegaKart"></div>
+    <div>
+      <span class="kicker">MegaKart Fes</span>
+      <h1>Inscription</h1>
+    </div>
+    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Jour / nuit"></button>
+  </header>
+  <p class="lead" style="text-align:center">Choisissez votre langue<br><span dir="rtl">اختر لغتك</span></p>
+  <button type="button" class="lang-btn" data-lang="fr"><b>Francais</b><small>Continuer en francais</small></button>
+  <button type="button" class="lang-btn" data-lang="ar" dir="rtl"><b>العربية</b><small>المتابعة بالعربية</small></button>
+</div>
+
+<div class="wrap hidden" id="app">
   <header>
     <div class="logo" role="img" aria-label="MegaKart"></div>
     <div>
       <span class="kicker">MegaKart Fès</span>
-      <h1>Inscription pilote</h1>
+      <h1 data-i18n="title">Inscription pilote</h1>
     </div>
+    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Jour / nuit"></button>
   </header>
 
   <form id="form" novalidate>
-    <p class="lead">Inscrivez-vous, ajoutez vos amis, choisissez l'âge et le pilote de chacun. Vos noms s'afficheront sur l'écran géant pendant la course.</p>
+    <p class="lead" data-i18n="lead">Inscrivez-vous, ajoutez vos amis, choisissez l'âge et le pilote de chacun. Vos noms s'afficheront sur l'écran géant pendant la course.</p>
     <p class="error hidden" id="error" role="alert"></p>
 
     <fieldset id="main-block">
-      <legend>Vous</legend>
-      <label><span>Prénom et nom</span>
+      <legend data-i18n="you">Vous</legend>
+      <label><span><span data-i18n="name">Prénom et nom</span> <em data-i18n="nameHint">(les deux)</em></span>
         <input id="name" type="text" autocomplete="name" enterkeyhint="next" maxlength="60" required>
       </label>
-      <label><span>Téléphone</span>
+      <label><span data-i18n="phone">Téléphone</span>
         <input id="phone" type="tel" autocomplete="tel" inputmode="tel" enterkeyhint="next" maxlength="24" required>
       </label>
-      <label><span>Email <em>(facultatif)</em></span>
+      <label><span><span data-i18n="email">Email</span> <em data-i18n="emailHint">(facultatif)</em></span>
         <input id="email" type="email" autocomplete="email" inputmode="email" enterkeyhint="done" maxlength="80">
       </label>
-      <div class="field"><span>Âge</span><div class="wheel" data-wheel="age-main"></div></div>
-      <div class="field" data-height="main"><span>Taille <em>(junior : 130 cm · GT : 160 cm)</em></span><div class="wheel" data-wheel="height-main"></div></div>
+      <div class="field"><span data-i18n="age">Âge</span><div class="wheel" data-wheel="age-main"></div></div>
+      <div class="field" data-height="main"><span><span data-i18n="height">Taille</span> <em data-i18n="heightHint">(junior : 130 cm · GT : 160 cm)</em></span><div class="wheel" data-wheel="height-main"></div></div>
       <div class="chips" data-chips="main"></div>
       <div>
-        <span style="display:block;margin-bottom:8px;font-size:13px;font-weight:700">Votre pilote</span>
+        <span style="display:block;margin-bottom:8px;font-size:13px;font-weight:700" data-i18n="pilot">Votre pilote</span>
         <div class="colors" data-colors="main" role="radiogroup" aria-label="Couleur du pilote"></div>
       </div>
     </fieldset>
 
     <div id="players"></div>
-    <button type="button" class="ghost" id="add">+ Ajouter un pilote</button>
+    <button type="button" class="ghost" id="add" data-i18n="addPilot">+ Ajouter un pilote</button>
+
+    <fieldset>
+      <legend data-i18n="formula">Votre formule</legend>
+      <p class="lead" style="font-size:13px" data-i18n="formulaLead">Les formules proposées s'adaptent au nombre de pilotes.</p>
+      <p class="pack-hint" id="packHint"></p>
+      <div class="packs" id="packs" role="radiogroup" aria-label="Formule"></div>
+      <div class="pack-total">
+        <span data-i18n="totalLabel">Total à payer à l'accueil</span>
+        <b id="packTotal">—</b>
+      </div>
+    </fieldset>
 
     <label class="check" for="waiver">
       <input id="waiver" type="checkbox" required>
-      <span>J'accepte le règlement de piste et les consignes de sécurité pour tout le groupe.
-        <small>Les mineurs doivent être accompagnés d'un parent ou tuteur à l'accueil.</small></span>
+      <span><span data-i18n="waiver">J'accepte le règlement de piste et les consignes de sécurité pour tout le groupe.</span>
+        <small data-i18n="waiverSmall">La charte de bonne conduite est à lire et à signer à l'étape suivante.</small></span>
     </label>
     <label class="check" for="offers">
       <input id="offers" type="checkbox">
-      <span>Je souhaite recevoir les offres MegaKart.
-        <small>Facultatif. Vous pouvez demander leur arrêt à tout moment.</small></span>
+      <span><span data-i18n="offers">Je souhaite recevoir les offres MegaKart.</span>
+        <small data-i18n="offersSmall">Facultatif. Vous pouvez demander leur arrêt à tout moment.</small></span>
     </label>
 
-    <button type="submit" class="primary" id="submit">Valider l'inscription</button>
+    <button type="submit" class="primary" id="submit" data-i18n="submit">Continuer vers la charte</button>
   </form>
+
+  <section class="charter hidden" id="charter" aria-labelledby="charterTitle">
+    <div class="charter-head">
+      <span class="kicker" data-i18n="charterStep">Etape 2 sur 2</span>
+      <h2 id="charterTitle" data-i18n="charterTitle">Charte de bonne conduite</h2>
+    </div>
+
+    <p class="error hidden" id="charterError" role="alert"></p>
+
+    <p class="charter-intro" data-i18n="charterIntro">Tout pilote ou accompagnant s'engage a respecter les regles suivantes :</p>
+
+    <ol class="rules" id="rules"></ol>
+
+    <!-- One signature per pilot: the charter binds each driver, so each driver signs it. -->
+    <p class="charter-intro" style="border-color:rgba(216,255,53,.4)" data-i18n="signAll">Chaque pilote signe la charte.</p>
+    <div id="signatures"></div>
+
+    <label class="check" for="charterOk">
+      <input id="charterOk" type="checkbox">
+      <span data-i18n="charterOk">J'ai lu et j'accepte cette charte.</span>
+    </label>
+
+    <button type="button" class="primary" id="charterSubmit" data-i18n="charterSubmit">Je signe et je valide</button>
+    <button type="button" class="ghost" id="charterBack" data-i18n="back">Modifier mes informations</button>
+    <p class="charter-mark">🏁 MEGAkart · Drive. Race. Repeat.</p>
+  </section>
 
   <div class="done hidden" id="done">
     <div class="wheel-img" aria-hidden="true"></div>
-    <h2>C'est enregistré&nbsp;!</h2>
-    <p class="lead">Présentez ce code à l'accueil pour recevoir vos karts.</p>
+    <h2 data-i18n="doneTitle">C'est enregistré&nbsp;!</h2>
+    <p class="lead" data-i18n="doneLead">Présentez ce code à l'accueil pour recevoir vos karts.</p>
     <div class="code" id="code">—</div>
+    <div id="donePack" style="color:var(--muted);font-size:13px"></div>
     <div class="roster" id="doneRoster"></div>
   </div>
 
@@ -145,10 +303,82 @@
     <p class="lead" id="gateText">Scannez le QR code affiché à l'accueil pour obtenir un nouveau lien.</p>
   </div>
 
-  <footer>Vos informations restent sur l'ordinateur de MegaKart Fès, pour la gestion des sessions.</footer>
+  <footer data-i18n="footer">Vos informations restent sur l'ordinateur de MegaKart Fès, pour la gestion des sessions.</footer>
 </div>
 <script>
   var COLORS = [{"id":1,"label":"Violet","hex":"#8b5cf6"},{"id":2,"label":"Jaune","hex":"#f5d90a"},{"id":3,"label":"Orange","hex":"#f97316"},{"id":4,"label":"Vert","hex":"#45c74a"},{"id":5,"label":"Noir","hex":"#3a4048"},{"id":6,"label":"Bleu","hex":"#2b7de9"},{"id":7,"label":"Rouge","hex":"#e23b3b"},{"id":8,"label":"Blanc","hex":"#e9eef4"}];
+
+  // Declared up here on purpose: t() is called while the first colour swatches are drawn,
+  // which happens before the Language section below is ever reached.
+  var LANG = "fr";
+  var I18N = {
+    fr: {
+      title: "Inscription pilote", lead: "Inscrivez-vous, ajoutez vos amis, choisissez l'âge et le pilote de chacun. Vos noms s'afficheront sur l'écran géant pendant la course.",
+      you: "Vous", name: "Prénom et nom", nameHint: "(les deux)", phone: "Téléphone", email: "Email", emailHint: "(facultatif)",
+      age: "Âge", height: "Taille", heightHint: "(junior : 130 cm · GT : 160 cm)", pilot: "Votre pilote",
+      years: "ans", cm: "cm",
+      addPilot: "+ Ajouter un pilote", addMax: "Maximum atteint (12 pilotes)", pilotN: "Pilote", remove: "Retirer", hisPilot: "Son pilote",
+      formula: "Votre formule", formulaLead: "Les formules proposées s'adaptent au nombre de pilotes.",
+      perDriver: "PAR PILOTE", totalLabel: "Total à payer à l'accueil",
+      perGroup: "POUR LE GROUPE", perMonth: "PAR MOIS", perWeek: "PAR SEMAINE",
+      groupTitle: "Packs de groupe", packsTitle: "Packs", packsEach: "Ou chacun son pack", subsTitle: "Abonnements",
+      sessionsTitle: "À la session",
+      recommended: "Conseillé", groupRange: "Pour {a} à {b} pilotes", groupExact: "Pour {n} pilotes",
+      hintSolo: "1 pilote : packs individuels et abonnements.",
+      hintGroup: "{n} pilotes : le pack de groupe adapté est sélectionné.",
+      hintEach: "{n} pilotes : chaque pilote paie son pack.",
+      noOffer: "Aucune formule en ligne pour ce groupe : l'accueil vous conseillera.",
+      u_sessions: "session|sessions", u_tours: "tour|tours", u_minutes: "minute|minutes", u_min: "min",
+      bonusIncl: "dont {n} offert(s)", payAtDesk: "à régler à l'accueil",
+      waiver: "J'accepte le règlement de piste et les consignes de sécurité pour tout le groupe.",
+      waiverSmall: "La charte de bonne conduite est à lire et à signer à l'étape suivante. Les mineurs doivent être accompagnés d'un parent ou tuteur à l'accueil.",
+      offers: "Je souhaite recevoir les offres MegaKart.", offersSmall: "Facultatif. Vous pouvez demander leur arrêt à tout moment.",
+      submit: "Continuer vers la charte", footer: "Vos informations restent sur l'ordinateur de MegaKart Fès, pour la gestion des sessions.",
+      charterStep: "Étape 2 sur 2", charterTitle: "Charte de bonne conduite",
+      charterIntro: "Tout pilote ou accompagnant s'engage à respecter les règles suivantes :",
+      signLabel: "Signature", signHint: "Signez avec le doigt", clear: "Effacer",
+      charterOk: "J'ai lu et j'accepte cette charte.", charterSubmit: "Je signe et je valide", back: "Modifier mes informations",
+      signAll: "Chaque pilote signe la charte.", signOf: "Signature de", signedOk: "signé", signedNo: "à signer",
+      doneTitle: "C'est enregistré !", doneLead: "Présentez ce code à l'accueil pour recevoir vos karts."
+    },
+    ar: {
+      title: "تسجيل السائق", lead: "سجّل نفسك، أضف أصدقاءك، واختر عمر وسائق كل واحد. ستظهر أسماؤكم على الشاشة الكبيرة أثناء السباق.",
+      you: "أنت", name: "الاسم الشخصي والعائلي", nameHint: "(الاثنان)", phone: "الهاتف", email: "البريد الإلكتروني", emailHint: "(اختياري)",
+      age: "العمر", height: "الطول", heightHint: "(جونيور: 130 سم · GT: 160 سم)", pilot: "سائقك",
+      years: "سنة", cm: "سم",
+      addPilot: "+ إضافة سائق", addMax: "بلغت الحد الأقصى (12 سائقًا)", pilotN: "السائق", remove: "حذف", hisPilot: "سائقه", formula: "الصيغة", formulaLead: "الصيغ المقترحة تتغير حسب عدد السائقين.",
+      perDriver: "لكل سائق", totalLabel: "المبلغ الإجمالي عند الاستقبال",
+      perGroup: "للمجموعة", perMonth: "في الشهر", perWeek: "في الأسبوع",
+      groupTitle: "عروض المجموعات", packsTitle: "العروض", packsEach: "أو عرض لكل سائق", subsTitle: "الاشتراكات",
+      sessionsTitle: "بالحصة",
+      recommended: "مقترح", groupRange: "من {a} إلى {b} سائقين", groupExact: "لـ {n} سائقين",
+      hintSolo: "سائق واحد: عروض فردية واشتراكات.",
+      hintGroup: "{n} سائقين: تم اختيار عرض المجموعة المناسب.",
+      hintEach: "{n} سائقين: كل سائق يدفع عرضه.",
+      noOffer: "لا توجد صيغة متاحة لهذه المجموعة: سيساعدكم الاستقبال.",
+      u_sessions: "حصة|حصص", u_tours: "دورة|دورات", u_minutes: "دقيقة|دقائق", u_min: "د",
+      bonusIncl: "منها {n} مجانًا", payAtDesk: "يُدفع عند الاستقبال",
+      waiver: "أوافق على نظام الحلبة وتعليمات السلامة لكل المجموعة.",
+      waiverSmall: "ميثاق حسن السلوك يُقرأ ويُوقّع في الخطوة التالية. يجب أن يكون القاصرون مرفوقين بأحد الوالدين أو الوصي عند الاستقبال.",
+      offers: "أرغب في تلقي عروض ميغا كارت.", offersSmall: "اختياري. يمكنك طلب إيقافها في أي وقت.",
+      submit: "المتابعة إلى الميثاق", footer: "معلوماتكم تبقى في حاسوب ميغا كارت فاس، لتدبير الحصص.",
+      charterStep: "الخطوة 2 من 2", charterTitle: "ميثاق حسن السلوك",
+      charterIntro: "يلتزم كل سائق أو مرافق باحترام القواعد التالية:",
+      signLabel: "التوقيع", signHint: "وقّع بإصبعك", clear: "مسح",
+      charterOk: "قرأت هذا الميثاق وأوافق عليه.", charterSubmit: "أوقّع وأؤكّد", back: "تعديل معلوماتي",
+      signAll: "كل سائق يوقّع الميثاق.", signOf: "توقيع", signedOk: "وقّع", signedNo: "لم يوقّع",
+      doneTitle: "تم التسجيل!", doneLead: "قدّم هذا الرمز عند الاستقبال لاستلام الكارتات."
+    }
+  };
+  // The eight driver colours, by the id DRIVER_COLORS uses.
+  var COLOR_NAMES = {
+    ar: { 1: "بنفسجي", 2: "أصفر", 3: "برتقالي", 4: "أخضر",
+          5: "أسود", 6: "أزرق", 7: "أحمر", 8: "أبيض" }
+  };
+  function colorName(color) {
+    return (COLOR_NAMES[LANG] && COLOR_NAMES[LANG][color.id]) || color.label;
+  }
+
   var MIN_AGE = 8, JUNIOR_MAX_AGE = 14;
   var MIN_HEIGHT = { JUNIOR: 130, GT: 160 };
   var AGES = [];
@@ -163,6 +393,18 @@
   function categoryFor(age) { return age == null ? null : age <= JUNIOR_MAX_AGE ? "JUNIOR" : "GT"; }
 
   // Snapping wheel: tall enough to show three values, the middle one is the selection.
+  // Rewrites the labels of wheels that already exist, so switching language does not throw
+  // away the position the client has already scrolled to.
+  function relabelWheels() {
+    Array.prototype.forEach.call(document.querySelectorAll(".wheel"), function (wheel) {
+      var unit = wheel.getAttribute("data-unit");
+      if (!unit) return;
+      Array.prototype.forEach.call(wheel.querySelectorAll(".wheel-item"), function (item) {
+        item.textContent = item.dataset.value + " " + t(unit);
+      });
+    });
+  }
+
   function buildWheel(host, values, selected, format, onPick) {
     host.innerHTML = '<div class="wheel-line"></div><div class="wheel-scroll" tabindex="0" role="listbox"><div class="wheel-pad"></div><div class="wheel-items"></div><div class="wheel-pad"></div></div>';
     var scroll = host.querySelector(".wheel-scroll");
@@ -242,8 +484,8 @@
       button.className = "color" + (color.id === selected ? " selected" : "") + (taken.indexOf(color.id) >= 0 ? " taken" : "");
       button.setAttribute("role", "radio");
       button.setAttribute("aria-checked", color.id === selected ? "true" : "false");
-      button.setAttribute("aria-label", "Pilote " + color.label);
-      button.innerHTML = '<img src="/drivers/driver-' + color.id + '.png" alt=""><b>' + color.label + "</b>";
+      button.setAttribute("aria-label", t("pilotN") + " " + colorName(color));
+      button.innerHTML = '<img src="/drivers/driver-' + color.id + '.png" alt=""><b>' + colorName(color) + "</b>";
       button.addEventListener("click", function () {
         if (key === "main") main.color = color.id;
         else { var p = players.find(function (x) { return x.key === key; }); if (p) p.color = color.id; }
@@ -255,25 +497,28 @@
   }
 
   function renderPlayers() {
+    // Blocks are rebuilt from scratch, so anything translated inside them is written by t()
+    // above; nothing here needs applyLanguage() to run again.
     var host = document.getElementById("players");
     host.innerHTML = "";
     players.forEach(function (player, index) {
       var block = document.createElement("fieldset");
       block.innerHTML =
-        '<div class="player-head"><strong>Pilote ' + (index + 2) + '</strong>' +
-        '<button type="button" class="remove">Retirer</button></div>' +
-        '<label><span>Prénom et nom</span><input type="text" maxlength="60" data-field="name" value="' + player.name.replace(/"/g, "&quot;") + '"></label>' +
-        '<label><span>Téléphone</span><input type="tel" inputmode="tel" maxlength="24" data-field="phone" value="' + player.phone.replace(/"/g, "&quot;") + '"></label>' +
-        '<div class="field"><span>Âge</span><div class="wheel" data-w="age"></div></div>' +
-        '<div class="field" data-h><span>Taille <em>(junior : 130 cm · GT : 160 cm)</em></span><div class="wheel" data-w="height"></div></div>' +
+        '<div class="player-head"><strong>' + t("pilotN") + ' ' + (index + 2) + '</strong>' +
+        '<button type="button" class="remove">' + t("remove") + '</button></div>' +
+        '<label><span>' + t("name") + '</span><input type="text" maxlength="60" data-field="name" value="' + player.name.replace(/"/g, "&quot;") + '"></label>' +
+        '<label><span>' + t("phone") + '</span><input type="tel" inputmode="tel" maxlength="24" data-field="phone" value="' + player.phone.replace(/"/g, "&quot;") + '"></label>' +
+        '<div class="field"><span>' + t("age") + '</span><div class="wheel" data-w="age"></div></div>' +
+        '<div class="field" data-h><span>' + t("height") + ' <em>' + t("heightHint") + '</em></span><div class="wheel" data-w="height"></div></div>' +
         '<div class="chips"></div>' +
-        '<label><span>Email <em>(facultatif)</em></span><input type="email" maxlength="80" inputmode="email" data-field="email" value="' + player.email.replace(/"/g, "&quot;") + '"></label>' +
-        '<div><span style="display:block;margin-bottom:8px;font-size:13px;font-weight:700">Son pilote</span><div class="colors" role="radiogroup"></div></div>';
+        '<label><span>' + t("email") + ' <em>' + t("emailHint") + '</em></span><input type="email" maxlength="80" inputmode="email" data-field="email" value="' + player.email.replace(/"/g, "&quot;") + '"></label>' +
+        '<div><span style="display:block;margin-bottom:8px;font-size:13px;font-weight:700">' + t("hisPilot") + '</span><div class="colors" role="radiogroup"></div></div>';
 
       block.querySelectorAll("input[data-field]").forEach(function (input) {
         input.addEventListener("input", function () { player[input.dataset.field] = input.value; });
       });
       block.querySelector(".remove").addEventListener("click", function () {
+        window.setTimeout(function () { if (typeof renderPacks === "function") renderPacks(); }, 0);
         players = players.filter(function (x) { return x.key !== player.key; });
         renderPlayers();
         renderColors(document.querySelector('[data-colors="main"]'), "main", main.color);
@@ -285,11 +530,13 @@
 
       var chips = block.querySelector(".chips");
       function syncPlayer() { renderChips(chips, player.age, player.height); }
-      buildWheel(block.querySelector('[data-w="age"]'), AGES, player.age, function (v) { return v + " ans"; }, function (v) {
+      block.querySelector('[data-w="age"]').setAttribute("data-unit", "years");
+      block.querySelector('[data-w="height"]').setAttribute("data-unit", "cm");
+      buildWheel(block.querySelector('[data-w="age"]'), AGES, player.age, function (v) { return v + " " + t("years"); }, function (v) {
         player.age = v;
         syncPlayer();
       });
-      buildWheel(block.querySelector('[data-w="height"]'), HEIGHTS, player.height, function (v) { return v + " cm"; }, function (v) {
+      buildWheel(block.querySelector('[data-w="height"]'), HEIGHTS, player.height, function (v) { return v + " " + t("cm"); }, function (v) {
         player.height = v;
         syncPlayer();
       });
@@ -297,16 +544,19 @@
       renderColors(block.querySelector(".colors"), player.key, player.color);
     });
     var add = document.getElementById("add");
-    add.textContent = players.length >= 11 ? "Maximum atteint (12 pilotes)" : "+ Ajouter un pilote";
+    add.textContent = players.length >= 11 ? t("addMax") : t("addPilot");
     add.disabled = players.length >= 11;
   }
 
-  buildWheel(document.querySelector('[data-wheel="age-main"]'), AGES, null, function (v) { return v + " ans"; }, function (v) { main.age = v; syncMain(); });
-  buildWheel(document.querySelector('[data-wheel="height-main"]'), HEIGHTS, null, function (v) { return v + " cm"; }, function (v) { main.height = v; syncMain(); });
+  document.querySelector('[data-wheel="age-main"]').setAttribute("data-unit", "years");
+  document.querySelector('[data-wheel="height-main"]').setAttribute("data-unit", "cm");
+  buildWheel(document.querySelector('[data-wheel="age-main"]'), AGES, null, function (v) { return v + " " + t("years"); }, function (v) { main.age = v; syncMain(); });
+  buildWheel(document.querySelector('[data-wheel="height-main"]'), HEIGHTS, null, function (v) { return v + " " + t("cm"); }, function (v) { main.height = v; syncMain(); });
   renderColors(document.querySelector('[data-colors="main"]'), "main", main.color);
 
   document.getElementById("add").addEventListener("click", function () {
     players.push({ key: "p" + nextId++, name: "", phone: "", age: null, height: null, email: "", color: freeColor() });
+    if (typeof renderPacks === "function") renderPacks();
     renderPlayers();
     renderColors(document.querySelector('[data-colors="main"]'), "main", main.color);
     // Bring the new pilot's fields up, not the bottom of the page: the person adding a friend
@@ -329,6 +579,250 @@
   // used or once its few minutes are up, so a screenshot of the link registers nobody tomorrow.
   var INVITE_TOKEN = (location.search.match(/[?&]t=([A-Za-z0-9_-]{8,64})/) || [])[1] || "";
 
+  // ---- Day / night -------------------------------------------------------------------------
+  // Chosen from the clock, not from the phone's own setting: the form is read on the client's
+  // phone but it has to match the room they are standing in. A tap on the header button
+  // overrides it for that phone only, for the odd case (a dark hall at noon).
+  var DAY_FROM = 7;        // 07:00 - the theme turns light
+  var DAY_UNTIL = 19;      // 19:00 - and back to dark
+  var themeOverride = null;
+
+  function dayByClock() {
+    var hour = new Date().getHours();
+    return hour >= DAY_FROM && hour < DAY_UNTIL;
+  }
+  function isDay() {
+    return themeOverride === null ? dayByClock() : themeOverride;
+  }
+  function applyTheme() {
+    var day = isDay();
+    document.body.classList.toggle("day", day);
+    Array.prototype.forEach.call(document.querySelectorAll("[data-theme-toggle]"), function (button) {
+      button.textContent = day ? "☀" : "☾";     // sun by day, moon by night
+    });
+    if (pads) pads.forEach(redrawPad);   // the ink colour follows the theme (no pads yet at boot)
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-theme-toggle]"), function (button) {
+    button.addEventListener("click", function () {
+      themeOverride = !isDay();
+      applyTheme();
+    });
+  });
+  // A phone left open across 19:00 should follow the hour rather than stay bright.
+  setInterval(function () { if (themeOverride === null) applyTheme(); }, 60000);
+
+  // ---- Language ------------------------------------------------------------------------------
+  // One language at a time, chosen before anything else. Every translatable string lives here
+  // and is applied by data-i18n, so a phrase is never written twice in the markup.
+  function t(key) { return (I18N[LANG] && I18N[LANG][key]) || I18N.fr[key] || key; }
+  function applyLanguage() {
+    document.body.classList.toggle("ar", LANG === "ar");
+    document.documentElement.setAttribute("lang", LANG);
+    document.documentElement.setAttribute("dir", LANG === "ar" ? "rtl" : "ltr");
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n]"), function (node) {
+      node.textContent = t(node.getAttribute("data-i18n"));
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n-html]"), function (node) {
+      node.innerHTML = t(node.getAttribute("data-i18n-html"));
+    });
+    relabelWheels();
+    renderCharter();
+    renderPacks();
+    renderPlayers();      // the pilot blocks carry translated labels, built by t()
+    renderColors(document.querySelector('[data-colors="main"]'), "main", main.color);
+    renderSignatures();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".lang-btn"), function (button) {
+    button.addEventListener("click", function () {
+      LANG = button.getAttribute("data-lang");
+      document.getElementById("langGate").classList.add("hidden");
+      document.getElementById("app").classList.remove("hidden");
+      applyLanguage();
+      window.scrollTo(0, 0);
+    });
+  });
+
+  // ---- Packs -------------------------------------------------------------------------------
+  // The offers come from the dashboard's catalog, and which ones are shown depends on the group:
+  // one pilot sees the individual packs and the subscriptions; a group sees the group packs its
+  // size fits, with the snuggest one preselected, then the per-pilot packs. Adding or removing a
+  // pilot re-picks the pack, unless the client chose one that still fits.
+  // The phone never sends a price - only the pack id - and the bridge prices it again with the
+  // same rules, so the amount owed cannot be altered from here.
+  function groupRange(o) {
+  if (!o || o.basis !== "groupe") return null;
+  var max = Math.round(Number(o.people));
+  if (!(max >= 2)) max = 2;
+  var min = o.minPeople == null ? max - 1 : Math.round(Number(o.minPeople));
+  if (!(min >= 2)) min = 2;
+  if (min > max) min = max;
+  return { min: min, max: max };
+}
+
+function offerFits(o, n) {
+  if (!o || o.enabled === false || !(n >= 1)) return false;
+  var range = groupRange(o);
+  if (range) return n >= range.min && n <= range.max;
+  // A subscription belongs to one person: it is offered to a pilot signing up alone.
+  if (o.period === "mois" || o.period === "semaine") return n === 1;
+  return true;
+}
+
+function offerTotal(o, n) {
+  if (!o || !(n >= 1)) return null;
+  var price = Math.round(Number(o.price));
+  if (!(price >= 0)) return null;
+  return o.basis === "groupe" ? price : price * n;
+}
+
+function offersFor(offers, n) {
+  var fits = (offers || []).filter(function (o) { return offerFits(o, n); });
+  var group = fits.filter(function (o) { return o.basis === "groupe"; });
+  var sessions = fits.filter(function (o) { return o.basis !== "groupe" && o.kind === "session"; });
+  var packs = fits.filter(function (o) { return o.basis !== "groupe" && o.kind !== "session" && o.period !== "mois" && o.period !== "semaine"; });
+  var subscriptions = fits.filter(function (o) { return o.basis !== "groupe" && o.kind !== "session" && (o.period === "mois" || o.period === "semaine"); });
+  var best = null;
+  var bestEmpty = 0;
+  group.forEach(function (o) {
+    var empty = groupRange(o).max - n;
+    if (!best || empty < bestEmpty || (empty === bestEmpty && o.price < best.price)) { best = o; bestEmpty = empty; }
+  });
+  if (!best) best = packs[0] || sessions[0] || subscriptions[0] || null;
+  return { group: group, packs: packs, sessions: sessions, subscriptions: subscriptions, recommended: best ? best.id : null };
+}
+
+  var OFFERS = [{"id":"bronze","kind":"individuel","name":"Silver","color":"#c0c7cf","description":"L’offre idéale pour découvrir le karting.","price":300,"originalPrice":360,"basis":"personne","people":null,"minPeople":null,"capacity":"","period":"unique","unit":"sessions","quantity":3,"bonus":0,"sessionMinutes":8,"extras":["Boisson gratuite"],"audience":"Nouveaux clients · Débutants · Clients occasionnels","enabled":true},{"id":"silver","kind":"individuel","name":"Gold","color":"#d6cf00","description":"Plus de sessions, plus de vitesse et d’adrénaline.","price":600,"originalPrice":null,"basis":"personne","people":null,"minPeople":null,"capacity":"","period":"unique","unit":"sessions","quantity":5,"bonus":1,"sessionMinutes":8,"extras":["Inscription anticipée"],"audience":"Clients réguliers · Passionnés · Groupes","enabled":true},{"id":"gold","kind":"individuel","name":"Premium","color":"#8b5cf6","description":"L’expérience la plus intense de la gamme packs.","price":700,"originalPrice":720,"basis":"personne","people":null,"minPeople":null,"capacity":"","period":"unique","unit":"sessions","quantity":6,"bonus":1,"sessionMinutes":8,"extras":["Boisson gratuites","Inscription anticipée"],"audience":"Passionnés · Clients réguliers · Groupes","enabled":true},{"id":"famille","kind":"famille","name":"Pack Famille","color":"#2b7de9","description":"Toute la famille en piste, chacun dans le bon kart.","price":400,"originalPrice":480,"basis":"groupe","people":4,"minPeople":3,"capacity":"2 Juniors + 2 Adultes","period":"unique","unit":"sessions","quantity":1,"bonus":0,"sessionMinutes":8,"extras":["Karts adaptés","Briefing de sécurité","Photos souvenirs"],"audience":"Familles · Parents avec enfants · Sorties familiales","enabled":true},{"id":"amis","kind":"amis","name":"Pack Amis","color":"#e23b3b","description":"À quatre, le cinquième roule gratuitement.","price":500,"originalPrice":600,"basis":"groupe","people":5,"minPeople":4,"capacity":"4 personnes · 5e gratuite","period":"unique","unit":"sessions","quantity":1,"bonus":0,"sessionMinutes":8,"extras":["Tarif préférentiel","Session privatisée","Ambiance garantie"],"audience":"Groupes d’amis · Collègues · Anniversaires · Événements privés","enabled":true},{"id":"starter","kind":"abonnement","name":"STARTER","color":"#00943b","description":"Un rythme régulier, un budget maîtrisé.","price":780,"originalPrice":null,"basis":"personne","people":null,"minPeople":null,"capacity":"","period":"mois","unit":"sessions","quantity":6,"bonus":1,"sessionMinutes":8,"extras":["Tarif préférentiel","Inscription anticipée à la session","Bonus au renouvellement","Valable 1 mois"],"audience":"Débutants · Clients réguliers · Clients occasionnels en progression","enabled":true},{"id":"pro","kind":"abonnement","name":"PRO","color":"#2b7de9","description":"Pour ceux qui roulent chaque semaine.","price":1050,"originalPrice":null,"basis":"personne","people":null,"minPeople":null,"capacity":"","period":"mois","unit":"sessions","quantity":8,"bonus":2,"sessionMinutes":8,"extras":["Sessions supplémentaires à tarif réduit","Inscription anticipée à la session","Avantages exclusifs","Valable 3 mois"],"audience":"Passionnés fréquents • Amis / groupes réguliers • Pilotes en progression rapide","enabled":true},{"id":"vip","kind":"abonnement","name":"VIP RACING","color":"#c9b3ff","description":"La pratique intensive, et les soirées privées.","price":2500,"originalPrice":null,"basis":"personne","people":null,"minPeople":null,"capacity":"","period":"mois","unit":"sessions","quantity":20,"bonus":3,"sessionMinutes":8,"extras":["Tarifs exclusifs","Invitations à des événements privés","Inscription anticipée à la session","Statut VIP","Valable 6 mois"],"audience":"Pilotes expérimentés / compétiteurs . Clients VIP . Entreprises & networking","enabled":true},{"id":"o-mufp2tbr3arm","kind":"abonnement","name":"BLACK","color":"#b3d6ff","description":"les soirées privées","price":5500,"originalPrice":null,"basis":"personne","people":null,"minPeople":null,"capacity":"","period":"mois","unit":"sessions","quantity":50,"bonus":4,"sessionMinutes":8,"extras":["Statut VIP","Invitations à des événements privés"],"audience":"Clients VIP","enabled":true}];
+  var selectedPack = null;
+  var packPicked = false;      // the client tapped a pack themselves
+
+  function packEsc(v) {
+    return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function findOffer(id) { return OFFERS.filter(function (o) { return o.id === id; })[0] || null; }
+  function shownOffers(f) { return f.group.concat(f.packs, f.sessions || [], f.subscriptions); }
+
+  function syncSelection() {
+    var f = offersFor(OFFERS, pilotCount());
+    var still = shownOffers(f).some(function (o) { return o.id === selectedPack; });
+    if (!still) packPicked = false;
+    if (!packPicked) selectedPack = f.recommended;
+    return f;
+  }
+
+  function volumeText(o) {
+    var n = (Number(o.quantity) || 1) + (Number(o.bonus) || 0);
+    var words = (t("u_" + o.unit) || t("u_sessions")).split("|");
+    var text = n + " " + (n > 1 ? words[1] : words[0]);
+    if (o.unit === "sessions" && o.sessionMinutes) text += " · " + o.sessionMinutes + " " + t("u_min");
+    if (Number(o.bonus) > 0) text += " (" + t("bonusIncl").replace("{n}", o.bonus) + ")";
+    return text;
+  }
+
+  function packCard(o, n, recommended) {
+    var card = document.createElement("div");
+    var on = o.id === selectedPack;
+    card.className = "pack" + (on ? " selected" : "");
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", on ? "true" : "false");
+    card.tabIndex = 0;
+    if (/^#[0-9a-fA-F]{6}$/.test(o.color || "")) card.style.setProperty("--pack", o.color);
+    var range = groupRange(o);
+    var lines = o.kind === "session" ? [] : [volumeText(o)];
+    if (range) lines.push(range.min === range.max ? t("groupExact").replace("{n}", range.max)
+                                                  : t("groupRange").replace("{a}", range.min).replace("{b}", range.max));
+    var unit = range ? t("perGroup") : o.period === "mois" ? t("perMonth") : o.period === "semaine" ? t("perWeek") : t("perDriver");
+    var was = Number(o.originalPrice) > Number(o.price) ? "<s>" + Math.round(o.originalPrice) + " DH</s>" : "";
+    card.innerHTML =
+      "<span><b>" + packEsc(o.name) + (recommended ? ' <em class="pack-reco">' + packEsc(t("recommended")) + "</em>" : "") + "</b>" +
+      (o.description ? "<small>" + packEsc(o.description) + "</small>" : "") +
+      (lines.length ? '<small class="pack-vol">' + packEsc(lines.join(" · ")) + "</small>" : "") + "</span>" +
+      '<span class="price">' + was + Math.round(o.price) + " DH<small>" + packEsc(unit) + "</small></span>";
+    function choose() { selectedPack = o.id; packPicked = true; renderPacks(); }
+    card.addEventListener("click", choose);
+    card.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); }
+    });
+    return card;
+  }
+
+  function renderPacks() {
+    var host = document.getElementById("packs");
+    if (!host) return;
+    var f = syncSelection();
+    var n = pilotCount();
+    host.innerHTML = "";
+    document.getElementById("packHint").textContent =
+      (n === 1 ? t("hintSolo") : f.group.length ? t("hintGroup") : t("hintEach")).replace("{n}", n);
+    function section(title, list) {
+      if (!list.length) return;
+      if (title) {
+        var head = document.createElement("div");
+        head.className = "pack-group";
+        head.textContent = title;
+        host.appendChild(head);
+      }
+      list.forEach(function (o) { host.appendChild(packCard(o, n, o.id === f.recommended)); });
+    }
+    section(f.group.length ? t("groupTitle") : "", f.group);
+    section(f.group.length ? t("packsEach") : (f.subscriptions.length || f.sessions.length ? t("packsTitle") : ""), f.packs);
+    section(t("sessionsTitle"), f.sessions);
+    section(t("subsTitle"), f.subscriptions);
+    if (!shownOffers(f).length) host.innerHTML = '<p class="pack-none">' + packEsc(t("noOffer")) + "</p>";
+    updateTotal();
+  }
+
+  function pilotCount() { return 1 + players.length; }
+
+  function updateTotal() {
+    var node = document.getElementById("packTotal");
+    var o = findOffer(selectedPack);
+    var n = pilotCount();
+    var total = o ? offerTotal(o, n) : null;
+    if (total == null) { node.textContent = "—"; node.title = ""; return; }
+    node.textContent = total + " DH";
+    node.title = o.basis === "groupe" ? t("perGroup") : Math.round(o.price) + " DH x " + n;
+  }
+
+  // The live catalog: what the dashboard holds right now. The baked copy above is only what the
+  // page opens with; a phone offline from both keeps it.
+  function cleanOffer(o) {
+    if (!o || o.id == null || !o.name) return null;
+    return {
+      id: String(o.id), kind: String(o.kind || ""), name: String(o.name), color: o.color || "", description: o.description || "",
+      price: Number(o.price) || 0, originalPrice: o.originalPrice == null ? null : Number(o.originalPrice),
+      basis: o.basis === "groupe" ? "groupe" : "personne",
+      people: o.people == null ? null : Number(o.people), minPeople: o.minPeople == null ? null : Number(o.minPeople),
+      period: o.period === "mois" || o.period === "semaine" ? o.period : "unique",
+      unit: o.unit === "tours" || o.unit === "minutes" ? o.unit : "sessions",
+      quantity: Number(o.quantity) || 1, bonus: Number(o.bonus) || 0,
+      sessionMinutes: o.sessionMinutes == null ? null : Number(o.sessionMinutes),
+      enabled: o.enabled !== false
+    };
+  }
+  function loadLiveOffers() {
+    var url = SIGNUP_MODE === "cloud" ? CLOUD_DB_URL + "/catalog.json" : "/catalog.json";
+    fetch(url, { cache: "no-store" })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (body) {
+        var list = body && body.offers;
+        // The database hands an array back as an object when it has gaps.
+        if (list && !Array.isArray(list) && typeof list === "object") list = Object.keys(list).map(function (k) { return list[k]; });
+        if (!list || !list.length) return;
+        var clean = list.map(cleanOffer).filter(function (o) { return o && o.enabled; });
+        if (!clean.length) return;
+        OFFERS = clean;
+        renderPacks();
+      })
+      .catch(function () {});
+  }
+
+  // Called HERE, below the "var OFFERS = [...]" above: var hoists the name but not the value,
+  // so calling this any earlier throws on an undefined OFFERS and kills every line after it -
+  // which is exactly how the age and height wheels stopped being built.
+  renderPacks();
+  loadLiveOffers();
+  applyTheme();
+
   function submitSignup(payload) {
     if (SIGNUP_MODE !== "cloud") {
       return fetch("/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
@@ -350,6 +844,13 @@
       status: "new", createdAt: Date.now(), players: players,
     };
     if (payload.email) record.email = payload.email;
+    // Only the pack ID travels. The amount is derived at the desk from the pack and the
+    // roster, so a phone cannot choose its own price.
+    if (payload.pack) record.pack = payload.pack;
+    // The signed charter travels with the sign-up: the rules refuse a sign-up without it.
+    record.charter = payload.charter;
+    record.signature = payload.signature;
+    record.signedAt = payload.signedAt;
     if (INVITE_TOKEN) record.token = INVITE_TOKEN;
     return fetch(CLOUD_DB_URL + "/signups/" + id + ".json", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) })
       .then(function (res) {
@@ -384,29 +885,271 @@
       age: main.age,
       height: main.height,
       color: main.color,
+      pack: selectedPack,
       waiver: document.getElementById("waiver").checked,
       offers: document.getElementById("offers").checked,
       team: players.map(function (p) { return { name: p.name.trim(), phone: p.phone.trim(), age: p.age, height: p.height, email: p.email.trim(), color: p.color }; })
     };
-    if (payload.name.length < 2) return fail("Indiquez votre prénom et votre nom.");
+    // The caisse requires a first AND last name. Accepting one word here would register the
+    // client, then fail silently at the desk: they would appear in Sessions but never in the
+    // Liste d'attente, so nobody could take their payment.
+    if (!/\S+\s+\S/.test(payload.name)) return fail("Indiquez votre prénom ET votre nom (deux mots).");
     if (payload.phone.replace(/\D/g, "").length < 6) return fail("Indiquez un numéro de téléphone valide.");
     if (payload.email && payload.email.indexOf("@") < 1) return fail("L'email n'est pas valide (ou laissez-le vide).");
     if (payload.age == null) return fail("Faites défiler la roue pour choisir votre âge.");
     if (payload.height == null) return fail("Faites défiler la roue pour choisir votre taille.");
     for (var i = 0; i < payload.team.length; i++) {
       var mate = payload.team[i];
-      if (mate.name.length < 2) return fail("Indiquez le nom du pilote " + (i + 2) + ".");
+      if (!/\S+\s+\S/.test(mate.name)) return fail("Prénom ET nom du pilote " + (i + 2) + " (deux mots).");
       if (mate.phone.replace(/\D/g, "").length < 6) return fail("Indiquez le téléphone du pilote " + (i + 2) + ".");
       if (mate.age == null) return fail("Choisissez l'âge du pilote " + (i + 2) + ".");
       if (mate.height == null) return fail("Choisissez la taille du pilote " + (i + 2) + ".");
       if (mate.email && mate.email.indexOf("@") < 1) return fail("L'email du pilote " + (i + 2) + " n'est pas valide.");
     }
+    if (!payload.pack && shownOffers(offersFor(OFFERS, pilotCount())).length) return fail("Choisissez une formule.");
     if (!payload.waiver) return fail("Vous devez accepter le règlement de piste.");
-    submit.disabled = true;
-    submit.textContent = "Envoi…";
-    submitSignup(payload)
+    // Nothing is sent yet: the charter comes first, and the inscription is written once it is signed.
+    showCharter(payload);
+  });
+
+  // ---- The charter text ------------------------------------------------------------------
+  // The ten rules, in both languages. Only the chosen one is ever shown.
+  var RULES = {
+    fr: [
+      "Je m'engage à respecter les autres pilotes et à rester courtois en toutes circonstances.",
+      "Je m'engage à respecter la signalisation présente sur le circuit ainsi que toutes les consignes de sécurité données lors du briefing.",
+      "Je m'engage à utiliser le kart de manière responsable et à respecter le matériel, les autres participants et l'environnement.",
+      "Je m'engage à respecter les consignes des commissaires de piste, des officiels et de l'ensemble du personnel MEGAkart.",
+      "Je m'engage à ne pas conduire sous l'emprise de l'alcool, de drogues ou de médicaments susceptibles d'altérer mes capacités.",
+      "Pour des raisons d'hygiène et de sécurité, je m'engage à porter une cagoule ou une charlotte sous le casque.",
+      "Je reconnais que la pratique du karting comporte des risques inhérents à l'activité et m'engage à adopter un comportement prudent et responsable afin de préserver ma sécurité et celle des autres participants.",
+      "En cas d'incident ou d'accident, je m'engage à suivre immédiatement les instructions du personnel MEGAkart, à rester dans mon kart ou à l'endroit indiqué jusqu'à autorisation, et à signaler tout problème ou blessure au personnel.",
+      "Je m'engage à ne pas effectuer de manœuvres dangereuses, de collisions volontaires, de dépassements non autorisés ou de comportements susceptibles de mettre en danger les autres participants.",
+      "Tout non-respect de cette charte ou des consignes de sécurité peut entraîner une <b>exclusion immédiate du circuit, sans remboursement</b>, sous réserve des dispositions légales applicables."
+    ],
+    ar: [
+      "ألتزم باحترام السائقين الآخرين والتحلي باللياقة في جميع الأحوال.",
+      "ألتزم باحترام الإشارات الموجودة في الحلبة وجميع تعليمات السلامة المقدَّمة خلال الإحاطة التوجيهية.",
+      "ألتزم باستعمال الكارت بمسؤولية واحترام المعدات والمشاركين الآخرين والمحيط.",
+      "ألتزم باحترام تعليمات مراقبي الحلبة والمسؤولين وجميع العاملين في ميغا كارت.",
+      "ألتزم بعدم القيادة تحت تأثير الكحول أو المخدرات أو الأدوية التي قد تؤثر على قدراتي.",
+      "لأسباب صحية وأمنية، ألتزم بارتداء غطاء للرأس أو قبعة واقية تحت الخوذة.",
+      "أُقرّ بأن ممارسة الكارتينغ تنطوي على مخاطر ملازمة للنشاط، وألتزم بسلوك حذر ومسؤول حفاظًا على سلامتي وسلامة المشاركين الآخرين.",
+      "في حالة وقوع حادث أو طارئ، ألتزم باتباع تعليمات فريق ميغا كارت فورًا، والبقاء في الكارت أو في المكان المحدَّد إلى حين الإذن بالمغادرة، وإبلاغ الفريق بأي مشكلة أو إصابة.",
+      "ألتزم بعدم القيام بمناورات خطيرة أو اصطدامات متعمَّدة أو تجاوزات غير مسموح بها أو أي سلوك قد يعرّض المشاركين الآخرين للخطر.",
+      "كل إخلال بهذا الميثاق أو بتعليمات السلامة قد يؤدي إلى <b>الإقصاء الفوري من الحلبة دون استرجاع المبلغ</b>، مع مراعاة الأحكام القانونية المعمول بها."
+    ]
+  };
+
+  function renderCharter() {
+    var host = document.getElementById("rules");
+    if (!host) return;
+    host.innerHTML = "";
+    (RULES[LANG] || RULES.fr).forEach(function (text, index) {
+      var item = document.createElement("li");
+      item.innerHTML = '<span class="n">' + ("0" + (index + 1)).slice(-2) + '</span>' +
+                       '<span class="fr">' + text + '</span>';
+      host.appendChild(item);
+    });
+  }
+
+  // ---- Charte de bonne conduite ---------------------------------------------------------------
+  // Step 2. The filled form waits here until the client has read the charter and signed it; only
+  // then is the sign-up written and the code shown. A sign-up with no signature is refused by the
+  // database rules too, so the charter cannot be skipped by going around the page.
+  var CHARTER_VERSION = "charte-v1";
+  var charterSection = document.getElementById("charter");
+  var charterSubmit = document.getElementById("charterSubmit");
+  var charterError = document.getElementById("charterError");
+  var pending = null;
+
+  // ---- One signature per pilot ----------------------------------------------------------
+  // The charter binds every driver, not just whoever filled the form, so every driver signs.
+  // Each pad keeps its strokes as fractions of its own box, so a rotation or a resize redraws
+  // the same signature and the export is the same size whatever the phone.
+  var pads = [];   // { name, canvas, ctx, strokes, stroke }
+
+  function signers() {
+    var list = [{ name: (document.getElementById("name").value || "").trim() || t("you") }];
+    players.forEach(function (p) { if (p.name.trim()) list.push({ name: p.name.trim() }); });
+    return list;
+  }
+
+  function drawStrokes(ctx, strokes, width, height, ink) {
+    ctx.lineWidth = Math.max(2, width / 250);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = ink;
+    ctx.fillStyle = ink;
+    strokes.forEach(function (stroke) {
+      if (!stroke.length) return;
+      if (stroke.length === 1) {
+        ctx.beginPath();
+        ctx.arc(stroke[0][0] * width, stroke[0][1] * height, ctx.lineWidth / 2, 0, 6.2832);
+        ctx.fill();
+        return;
+      }
+      ctx.beginPath();
+      ctx.moveTo(stroke[0][0] * width, stroke[0][1] * height);
+      for (var i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i][0] * width, stroke[i][1] * height);
+      ctx.stroke();
+    });
+  }
+
+  function redrawPad(pad) {
+    var box = pad.canvas.getBoundingClientRect();
+    if (!box.width) return;
+    pad.ctx.clearRect(0, 0, box.width, box.height);
+    // Light ink on the dark pad, dark ink on the light one - otherwise a day-time signature
+    // is drawn in white on white and looks like nothing was signed at all.
+    drawStrokes(pad.ctx, pad.strokes, box.width, box.height,
+                document.body.classList.contains("day") ? "#10140d" : "#f4f6ed");
+    pad.card.classList.toggle("signed", padSigned(pad));
+    pad.state.textContent = padSigned(pad) ? t("signedOk") : t("signedNo");
+    pad.hint.classList.toggle("hidden", pad.strokes.length > 0);
+  }
+
+  function fitPad(pad) {
+    var box = pad.canvas.getBoundingClientRect();
+    if (!box.width) return;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    pad.canvas.width = Math.round(box.width * dpr);
+    pad.canvas.height = Math.round(box.height * dpr);
+    pad.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    redrawPad(pad);
+  }
+
+  function padSigned(pad) {
+    var points = 0;
+    for (var i = 0; i < pad.strokes.length; i++) points += pad.strokes[i].length;
+    return points >= 8;     // a stray tap is not a signature
+  }
+
+  function padImage(pad) {
+    var out = document.createElement("canvas");
+    out.width = 600; out.height = 200;
+    var ctx = out.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, 600, 200);
+    drawStrokes(ctx, pad.strokes, 600, 200, "#0b0e05");   // dark ink on white, for printing
+    return out.toDataURL("image/png");
+  }
+
+  function renderSignatures() {
+    var host = document.getElementById("signatures");
+    if (!host) return;
+    var previous = {};
+    pads.forEach(function (pad) { previous[pad.name] = pad.strokes; });
+    host.innerHTML = "";
+    pads = [];
+    signers().forEach(function (person, index) {
+      var card = document.createElement("div");
+      card.className = "sign-card";
+      card.innerHTML =
+        '<div class="who"><span>' + t("signOf") + ' ' + person.name + '</span><span class="state">' + t("signedNo") + '</span></div>' +
+        '<div class="pad"><canvas></canvas><div class="baseline"></div><div class="hint">' + t("signHint") + '</div></div>' +
+        '<button type="button" class="remove">' + t("clear") + '</button>';
+      host.appendChild(card);
+      var canvas = card.querySelector("canvas");
+      var pad = {
+        name: person.name, card: card, canvas: canvas, ctx: canvas.getContext("2d"),
+        strokes: previous[person.name] || [], stroke: null,
+        state: card.querySelector(".state"), hint: card.querySelector(".hint"), index: index
+      };
+      canvas.addEventListener("pointerdown", function (event) {
+        event.preventDefault();
+        try { canvas.setPointerCapture(event.pointerId); } catch (e) {}
+        pad.stroke = [padPoint(pad, event)];
+        pad.strokes.push(pad.stroke);
+        redrawPad(pad);
+      });
+      canvas.addEventListener("pointermove", function (event) {
+        if (!pad.stroke) return;
+        event.preventDefault();
+        pad.stroke.push(padPoint(pad, event));
+        redrawPad(pad);
+      });
+      ["pointerup", "pointercancel", "pointerleave"].forEach(function (type) {
+        canvas.addEventListener(type, function () { pad.stroke = null; });
+      });
+      card.querySelector(".remove").addEventListener("click", function () {
+        pad.strokes = []; pad.stroke = null; redrawPad(pad);
+      });
+      pads.push(pad);
+      fitPad(pad);
+    });
+  }
+
+  function padPoint(pad, event) {
+    var box = pad.canvas.getBoundingClientRect();
+    return [(event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height];
+  }
+
+  window.addEventListener("resize", function () {
+    if (charterSection && !charterSection.classList.contains("hidden")) pads.forEach(fitPad);
+  });
+
+  function showCharter(payload) {
+    pending = payload;
+    charterError.classList.add("hidden");
+    form.classList.add("hidden");
+    charterSection.classList.remove("hidden");
+    renderCharter();
+    renderSignatures();
+    window.scrollTo(0, 0);
+  }
+
+  function backToForm() {
+    charterSection.classList.add("hidden");
+    form.classList.remove("hidden");
+    submit.disabled = false;
+    submit.textContent = t("submit");
+    window.scrollTo(0, 0);
+  }
+
+  function charterFail(message) {
+    charterError.textContent = message;
+    charterError.classList.remove("hidden");
+    charterSubmit.disabled = false;
+    charterSubmit.textContent = t("charterSubmit");
+    charterError.scrollIntoView({ block: "center" });
+  }
+
+  document.getElementById("charterBack").addEventListener("click", backToForm);
+
+  charterSubmit.addEventListener("click", function () {
+    charterError.classList.add("hidden");
+    if (!pending) return backToForm();
+    if (!document.getElementById("charterOk").checked) {
+      return charterFail(LANG === "ar" ? "يرجى تحديد المربع للموافقة على الميثاق."
+                                       : "Cochez la case pour accepter la charte.");
+    }
+    var missing = pads.filter(function (pad) { return !padSigned(pad); });
+    if (missing.length) {
+      return charterFail((LANG === "ar" ? "ينقص توقيع: " : "Signature manquante : ") +
+                         missing.map(function (pad) { return pad.name; }).join(", "));
+    }
+    charterSubmit.disabled = true;
+    charterSubmit.textContent = "Envoi…";
+    pending.charter = CHARTER_VERSION;
+    pending.language = LANG;
+    // The first pad is the person who registered; the rest are their pilots, in the same order
+    // the form lists them. signature stays the registrant's, so nothing downstream changes.
+    pending.signature = padImage(pads[0]);
+    pending.signatures = pads.map(function (pad) {
+      return { name: pad.name, signature: padImage(pad) };
+    });
+    pending.signedAt = Date.now();
+    submitSignup(pending)
       .then(function (data) {
         document.getElementById("code").textContent = data.code;
+        var chosen = findOffer(selectedPack);
+        if (chosen) {
+          var count = (data.players || []).length || pilotCount();
+          var owed = offerTotal(chosen, count);
+          document.getElementById("donePack").textContent =
+            chosen.name + (owed != null ? " · " + owed + " DH " + t("payAtDesk") : "");
+        }
         var roster = document.getElementById("doneRoster");
         roster.innerHTML = "";
         (data.players || []).forEach(function (p) {
@@ -415,7 +1158,7 @@
             '<span class="chip ' + (p.category === "JUNIOR" ? "chip-cadet" : "chip-senior") + '">' + p.category + "</span>";
           roster.appendChild(row);
         });
-        form.classList.add("hidden");
+        charterSection.classList.add("hidden");
         document.getElementById("done").classList.remove("hidden");
         window.scrollTo(0, 0);
       })
@@ -424,7 +1167,7 @@
           lockOut("Lien expiré", "Ce lien d'inscription vient d'expirer ou a déjà servi. Scannez le QR code affiché à l'accueil.");
           return;
         }
-        fail("Envoi impossible : " + e.message + (SIGNUP_MODE === "cloud" ? ". Vérifiez votre connexion et réessayez." : ". Vérifiez votre connexion et réessayez."));
+        charterFail("Envoi impossible : " + e.message + (SIGNUP_MODE === "cloud" ? ". Vérifiez votre connexion et réessayez." : ". Vérifiez votre connexion et réessayez."));
       });
   });
 
@@ -453,10 +1196,13 @@
     });
   }
 
-  function lockOut(title, text) {
-    document.getElementById("gateTitle").textContent = title;
-    document.getElementById("gateText").textContent = text;
+  // Shown when the link itself is refused, which can happen before the client has picked a
+   // language - so this screen is the one place that still speaks both.
+  function lockOut(title, text, titleAr, textAr) {
+    document.getElementById("gateTitle").textContent = titleAr && LANG === "ar" ? titleAr : title;
+    document.getElementById("gateText").textContent = textAr && LANG === "ar" ? textAr : text;
     form.classList.add("hidden");
+    document.getElementById("charter").classList.add("hidden");
     document.getElementById("done").classList.add("hidden");
     document.getElementById("gate").classList.remove("hidden");
     window.scrollTo(0, 0);

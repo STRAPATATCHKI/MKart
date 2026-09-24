@@ -1,0 +1,35 @@
+/* The sidebar's system card: tone of the dot, the three services, and Synchroniser. */
+
+.system-status.sys-update span i { background: #f5b83d; box-shadow: 0 0 8px #f5b83d; }
+.system-status.sys-warn span i { background: #f97316; box-shadow: 0 0 8px #f97316; }
+.system-status.sys-down span i { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+.system-status.sys-update { border-color: rgba(245,184,61,.35); }
+.system-status.sys-warn, .system-status.sys-down { border-color: rgba(255,107,105,.35); }
+.system-status small { line-height: 1.45; }
+.system-status small a { color: var(--lime); font-weight: 800; }
+
+.sys-rows { margin: 9px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.sys-rows li { display: flex; align-items: center; gap: 5px; color: #7d888e; font-size: 8px; font-weight: 700; }
+.sys-rows li i { width: 5px; height: 5px; border-radius: 99px; background: #56616a; }
+.sys-rows li.is-up i { background: var(--lime); }
+.sys-rows li.is-down { color: #ff9795; }
+.sys-rows li.is-down i { background: var(--danger); }
+
+.sys-sync, .sys-cancel {
+  margin-top: 10px; height: 28px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border-radius: 7px; font-size: 9px; font-weight: 800; letter-spacing: .03em; cursor: pointer;
+}
+.sys-sync { width: 100%; border: 1px solid var(--line); background: #121a1e; color: #c9d0cc; }
+.sys-sync:hover { border-color: rgba(183,255,57,.45); color: var(--lime); }
+.sys-sync.is-due { border-color: var(--lime); background: var(--lime); color: #0b0e05; }
+.sys-sync.is-due:hover { filter: brightness(1.08); color: #0b0e05; }
+.sys-cancel { border: 1px solid var(--line); background: transparent; color: #9ba5aa; }
+
+.sys-confirm p { margin: 9px 0 0; color: #9ba5aa; font-size: 8.5px; line-height: 1.5; }
+.sys-confirm .sys-warn { color: #ffb4a6; }
+.sys-confirm > div { display: flex; gap: 6px; }
+.sys-confirm > div .sys-sync { flex: 1; }
+
+.sys-progress { margin: 10px 0 0; display: flex; align-items: center; gap: 6px; color: var(--lime); font-size: 9px; font-weight: 700; }
+.sys-spin { animation: sys-spin 1s linear infinite; }
+@keyframes sys-spin { to { transform: rotate(360deg); } }

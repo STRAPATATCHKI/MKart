@@ -1,0 +1,42 @@
+/* Vue générale: the pieces the original overview did not have. */
+
+/* Which sources answered: the till, the sign-up bridge, the chrono. */
+.ov-sources span { height: 30px; padding: 0 11px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 8px; background: #0f1418; color: #9ba5aa; font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.ov-sources span i { width: 7px; height: 7px; border-radius: 50%; background: #56616a; }
+.ov-sources span.is-on i { background: var(--lime); box-shadow: 0 0 6px rgba(183,255,57,.55); }
+.ov-sources span.is-off { color: #ff9795; border-color: rgba(255,107,105,.3); }
+.ov-sources span.is-off i { background: var(--danger); }
+
+/* Revenue bars: cash at the bottom, card stacked on top, one column per day. */
+.bar-hit.ov-bar { flex-direction: column; justify-content: flex-end; align-items: stretch; }
+.bar-hit.ov-bar b { min-height: 0; flex: none; border-radius: 0; box-shadow: none; }
+.bar-hit.ov-bar b.ov-bar-cash { background: linear-gradient(180deg, var(--lime), #6f9f1a); border-radius: 0 0 2px 2px; }
+.bar-hit.ov-bar b.ov-bar-card { background: linear-gradient(180deg, #5aa2ff, #2b64b8); border-radius: 4px 4px 0 0; }
+.bar-hit.ov-bar b.ov-bar-card[style*="height: 0%"] + b.ov-bar-cash { border-radius: 4px 4px 2px 2px; }
+.bar-hit.ov-bar .bar-tip { line-height: 1.5; text-align: center; }
+.ov-dot { display: inline-block; width: 6px; height: 6px; margin: 0 4px 0 6px; border-radius: 50%; }
+.ov-dot.cash { background: var(--lime); }
+.ov-dot.card { background: #5aa2ff; }
+
+/* Caisse du jour: the whole ring is card, the lime arc over it is the cash share. */
+.radial .ov-radial-card { stroke: #3b7fd9; }
+
+/* Packs: the pack's own catalogue colour. */
+.ov-pack-dot { display: block; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 3px rgba(255,255,255,.04); }
+
+/* Inscriptions du jour */
+.ov-signups { margin: 8px 0 0; padding: 0; list-style: none; }
+.ov-signups li { min-height: 46px; display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; border-top: 1px solid var(--line-soft); }
+.ov-signups p { margin: 0; min-width: 0; }
+.ov-signups p b, .ov-signups p small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-signups p b { font-size: 10px; }
+.ov-signups p small { margin-top: 3px; color: #667178; font-size: 8px; }
+.ov-avatar { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; color: #0b0e05; font-size: 10px; font-weight: 900; }
+.ov-signups em { padding: 3px 7px; border-radius: 4px; background: #171e22; color: #7d888e; font-size: 8px; font-style: normal; font-weight: 800; letter-spacing: .05em; }
+.ov-signups em.is-ok { color: var(--lime); background: rgba(183,255,57,.08); }
+.ov-signups em.is-bad { color: #ff9795; background: rgba(255,107,105,.08); }
+.ov-signups li.ov-more { min-height: 34px; display: block; padding-top: 10px; color: #667178; font-size: 9px; }
+
+/* The reservation sheet: who is in it. */
+.ticket-visual > .ov-pilots { flex-wrap: wrap; gap: 6px; }
+.ov-pilots em { padding: 4px 8px; border-radius: 6px; background: #182126; color: #cfd6d2; font-size: 10px; font-style: normal; font-weight: 700; }

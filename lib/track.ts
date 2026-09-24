@@ -63,6 +63,48 @@ export function loadTrackRoute(): TrackRoute {
   }
 }
 
+/**
+ * The circuit as the DESK holds it, so every screen draws the same one.
+ *
+ * It used to live only in the browser's localStorage, which is per-origin: the dashboard on
+ * 127.0.0.1:8788, the same dashboard on the LAN address, and the big screen each kept their
+ * own drawing and showed three different tracks. The desk now owns it; localStorage stays as
+ * an instant first paint and as the fallback when the desk is unreachable.
+ */
+export async function fetchSharedTrack(): Promise<TrackRoute | null> {
+  try {
+    const res = await fetch("/api/track", { cache: "no-store" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { layout?: { points?: RoutePoint[]; start?: number; finish?: number; version?: number } | null };
+    const layout = body?.layout;
+    if (!layout || !Array.isArray(layout.points) || layout.points.length < 3) return null;
+    const points = layout.version === TRACK_LAYOUT_VERSION
+      ? layout.points
+      : layout.points.map((p) => ({ ...p, x: p.x * (TRACK_WIDTH / LEGACY_TRACK_WIDTH) }));
+    return {
+      points,
+      start: typeof layout.start === "number" ? layout.start : DEFAULT_ROUTE.start,
+      finish: typeof layout.finish === "number" ? layout.finish : DEFAULT_ROUTE.finish,
+    };
+  } catch {
+    return null;   // desk closed, or a static host with no API: keep whatever is on screen
+  }
+}
+
+/** Publish the drawing to the desk. Returns false when it could not be shared. */
+export async function saveSharedTrack(route: TrackRoute): Promise<boolean> {
+  try {
+    const res = await fetch("/api/track", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: TRACK_LAYOUT_VERSION, ...route }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // Tell other on-screen views (the Home mini map) that the track was edited.
 export function notifyTrackChanged() {
   try {

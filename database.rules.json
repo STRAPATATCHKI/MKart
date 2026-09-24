@@ -37,7 +37,7 @@
       ],
       "$id": {
         ".write": "auth != null || (!data.exists() && newData.exists() && root.child('invites').child(newData.child('token').val()).child('used').val() === false && root.child('invites').child(newData.child('token').val()).child('expiresAt').val() > now)",
-        ".validate": "newData.hasChildren(['name','phone','age','players','waiver','status','createdAt','token'])",
+        ".validate": "newData.hasChildren(['name','phone','age','players','waiver','status','createdAt','token','charter','signature','signedAt'])",
         "token": {
           ".validate": "newData.isString() && newData.val().length >= 8 && newData.val().length <= 64"
         },
@@ -64,6 +64,15 @@
         },
         "waiver": {
           ".validate": "newData.isBoolean() && newData.val() === true"
+        },
+        "charter": {
+          ".validate": "newData.isString() && newData.val().length >= 4 && newData.val().length <= 24"
+        },
+        "signature": {
+          ".validate": "newData.isString() && newData.val().beginsWith('data:image/png;base64,') && newData.val().length >= 200 && newData.val().length <= 120000"
+        },
+        "signedAt": {
+          ".validate": "newData.isNumber()"
         },
         "offers": {
           ".validate": "newData.isBoolean()"
@@ -107,10 +116,39 @@
             }
           }
         },
+        "pack": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,40}$/)"
+        },
+        "language": {
+          ".validate": "newData.isString() && (newData.val() === 'fr' || newData.val() === 'ar')"
+        },
+        "importedBy": {
+          ".validate": "auth != null && newData.isString() && newData.val().length <= 64"
+        },
+        "importedAt": {
+          ".validate": "auth != null && newData.isNumber()"
+        },
         "$other": {
           ".validate": false
         }
       }
+    },
+    "catalog": {
+      ".read": true,
+      ".write": "auth != null"
+    },
+    "staff": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": false
+      }
+    },
+    "reports": {
+      ".read": "auth != null && root.child('staff').child(auth.uid).val() === true",
+      ".write": false,
+      "payments": { ".indexOn": ["day", "paidAt"] },
+      "reservations": { ".indexOn": ["day", "createdAt"] },
+      "races": { ".indexOn": ["day", "startedAt"] }
     },
     "queue": {
       ".read": "auth != null",

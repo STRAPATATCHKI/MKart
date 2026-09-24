@@ -5,9 +5,17 @@ import { useLiveRace, type LiveDriver } from "@/hooks/use-live-race";
 import { useSessions, useActiveRoster } from "@/hooks/use-sessions";
 import { useHistory, type HistorySession } from "@/hooks/use-history";
 import { useGokartsSessions } from "@/hooks/use-gokarts-sessions";
-import { useTrackRoute } from "@/hooks/use-track";
-import { TRACK_WIDTH, TRACK_HEIGHT, LEGACY_TRACK_WIDTH, TRACK_LAYOUT_VERSION, defaultRoutePoints, makeSmoothRoute, notifyTrackChanged, type RoutePoint } from "@/lib/track";
-import { SESSION_TYPE_LABELS, STATE_LABELS, type SessionType, type SessionState } from "@/lib/megakart-session";
+import { TRACK_WIDTH, TRACK_HEIGHT, LEGACY_TRACK_WIDTH, TRACK_LAYOUT_VERSION, defaultRoutePoints, makeSmoothRoute, notifyTrackChanged, saveSharedTrack, type RoutePoint } from "@/lib/track";
+import { SESSION_TYPE_LABELS, STATE_LABELS, rankModeFor, type SessionType, type SessionState } from "@/lib/megakart-session";
+import { issueFor, sessionFormIssues } from "@/lib/session-form";
+import { CatalogPage } from "@/components/packs/catalog-page";
+import { ClientsPage } from "@/components/clients/clients-page";
+import { Overview } from "@/components/overview/overview";
+import { SystemStatus } from "@/components/system/system-status";
+import { TrackRecordCard } from "@/components/stats/track-record-card";
+import { OfferCard } from "@/components/packs/offer-card";
+import { useCatalog } from "@/hooks/use-catalog";
+import { onSale, pricePerPerson, savingLabel, totalUnits, volumeLabel, KIND_LABELS, type Offer } from "@/lib/catalog";
 import { apexController } from "@/lib/apex-session-controller";
 import { BigScreen } from "@/components/big-screen/big-screen";
 import { SouvenirPage } from "@/components/souvenir/souvenir-page";
@@ -23,29 +31,28 @@ import { SignupPanel } from "@/components/signups/signup-panel";
 import { FuelView } from "@/components/fuel/fuel-view";
 import { signupPlayers, type Signup } from "@/lib/bridge-client";
 import { DriverAvatar } from "@/components/big-screen/driver-avatar";
+import { useTiming } from "@/hooks/use-timing";
+import { RaceControlPanel } from "@/components/timing/race-control-panel";
+import { RaceHistoryPanel } from "@/components/timing/race-history-panel";
+import { useRaceHistory } from "@/hooks/use-race-history";
+import { explainTimingError, timing, TimingOffline } from "@/lib/timing-client";
 
 type DriverRow = { name: string; kart: string; transponder: string; color?: number };
 import { SOUVENIR_HASH_PREFIX } from "@/lib/race-souvenir";
 import {
-  Activity, ArrowDownRight, ArrowUpRight, Banknote, Bell, CalendarDays, CheckCircle2,
-  ChevronRight, CircleDollarSign, Clock3, CreditCard, Crosshair, Flag, Fuel, LayoutDashboard, Menu, MonitorPlay, MoreHorizontal,
-  PackageCheck, Pencil, PlusCircle, QrCode, Radio, RotateCcw, Save, Search, ShieldCheck, Smartphone,
-  TicketCheck, Trash2, Trophy, Undo2, UsersRound, WalletCards, X, Zap,
+  Activity, Banknote, Bell, CalendarDays, CheckCircle2,
+  ChevronRight, Clock3, CreditCard, Crosshair, Flag, Fuel, LayoutDashboard, Menu, MonitorPlay, MoreHorizontal,
+  PackageCheck, Pencil, PlusCircle, QrCode, Radio, RotateCcw, Save, Search,
+  Trash2, Trophy, Undo2, UsersRound, WalletCards, X, Zap,
 } from "lucide-react";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+
+import { useQueue } from "@/hooks/use-queue";
+import { badgeLabel, badgeTitle, waitingCount, waitingPilots } from "@/lib/queue-badge";
 
 const navItems = [
   { label: "Vue générale", icon: LayoutDashboard },
   { label: "Course en direct", icon: Flag, live: true },
-  { label: "Liste d’attente", icon: CalendarDays },
+  { label: "Liste d’attente", icon: CalendarDays, badge: "queue" as const },
   { label: "Sessions", icon: PlusCircle },
   { label: "Statistiques", icon: Trophy },
   { label: "Réservations", icon: CalendarDays },
@@ -59,38 +66,9 @@ const navItems = [
 type NotificationType = "qr" | "race" | "payment" | "delay";
 const operationalNotifications: { id: string; type: NotificationType; title: string; detail: string; time: string }[] = [];
 
-type Booking = { id: string; time: string; customer: string; initials: string; pack: string; racers: number; amount: string; status: "Confirmée" | "En piste" | "À encaisser"; source: string };
-const bookings: Booking[] = [];
-
 type QrReservation = { id: string; time: string; organizer: string; initials: string; friends: string[]; pack: string; amount: string; payment: "Carte bancaire" | "Espèces"; scannedAt: string };
 const qrReservations: QrReservation[] = [];
 
-type ClientHistoryEntry = { date: string; offer: string; amount: string; result: string };
-type PastClient = { id: string; name: string; initials: string; phone: string; email: string; since: string; lastVisit: string; visits: number; sessions: number; spend: number; average: number; favorite: string; payment: "Carte bancaire" | "Espèces"; points: number; profile: string; history: ClientHistoryEntry[] };
-const pastClients: PastClient[] = [];
-
-const chartData: Record<string, number[]> = {
-  "7 jours": [],
-  "30 jours": [],
-  "Ce mois": [],
-};
-
-const kartingPacks = [
-  { name: "Bronze", price: 250, originalPrice: 300, sessions: 3, bonus: 0, saving: "50 DH économisés · 16,7 %", summary: "L’offre idéale pour découvrir le karting.", benefits: ["3 sessions de karting", "Sensations garanties"], audience: "Nouveaux clients · Débutants · Clients occasionnels" },
-  { name: "Silver", price: 450, sessions: 5, bonus: 1, saving: "1 session offerte · 6 au total", summary: "Plus de sessions, plus de vitesse et d’adrénaline.", benefits: ["5 sessions de karting", "Inscription anticipée"], audience: "Clients réguliers · Passionnés · Groupes" },
-  { name: "Gold", price: 700, originalPrice: 900, sessions: 7, bonus: 2, saving: "150 DH économisés · 9 au total", summary: "L’expérience la plus intense de la gamme packs.", benefits: ["7 sessions de karting", "2 sessions supplémentaires gratuites", "Inscription anticipée"], audience: "Passionnés · Clients réguliers · Groupes" },
-];
-
-const monthlyPasses = [
-  { name: "Starter", price: 450, sessions: 5, bonus: "Bonus au renouvellement", benefits: ["Tarif préférentiel", "Inscription anticipée à la session"], audience: "Débutants · Clients réguliers · Budget mensuel maîtrisé" },
-  { name: "Pro", price: 850, sessions: 10, bonus: "1 session gratuite chaque mois", benefits: ["Sessions supplémentaires à tarif réduit", "Inscription anticipée à la session"], audience: "Passionnés · Clients fréquents · Pilotes amateurs" },
-  { name: "VIP Racing", price: 1600, sessions: 20, bonus: "2 sessions gratuites chaque mois", benefits: ["Tarifs exclusifs", "Invitations à des événements privés", "Inscription anticipée à la session"], audience: "Passionnés confirmés · Pratique intensive · Événements privés" },
-];
-
-const groupPacks = [
-  { name: "Pack Famille", price: 300, capacity: "2 Juniors + 2 Adultes", benefits: ["Karts adaptés", "Briefing de sécurité", "Photos souvenirs"], audience: "Familles · Parents avec enfants · Sorties familiales" },
-  { name: "Pack Amis", price: 400, capacity: "4 personnes · 5e gratuite", benefits: ["Tarif préférentiel", "Session privatisée", "Ambiance garantie"], audience: "Groupes d’amis · Collègues · Anniversaires · Événements privés" },
-];
 
 const loyaltyRewards = [
   { card: "Carte 1", reward: "20 % de réduction" },
@@ -99,11 +77,16 @@ const loyaltyRewards = [
   { card: "Carte 4", reward: "Boisson gratuite" },
 ];
 
-const catalogReport = [
-  ...kartingPacks.map((offer) => ({ category: "Pack karting", name: offer.name, price: offer.price, volume: `${offer.sessions + offer.bonus} sessions`, advantage: offer.saving })),
-  ...monthlyPasses.map((offer) => ({ category: "Abonnement", name: offer.name, price: offer.price, volume: `${offer.sessions} sessions / mois`, advantage: offer.bonus })),
-  ...groupPacks.map((offer) => ({ category: "Offre groupe", name: offer.name, price: offer.price, volume: offer.capacity, advantage: offer.benefits[0] })),
-];
+// The price matrix on Rapports, built from the live catalog rather than a copy of it.
+function catalogReportRows(offers: Offer[]) {
+  return offers.map((offer) => ({
+    category: KIND_LABELS[offer.kind].title,
+    name: offer.name,
+    price: offer.price,
+    volume: volumeLabel(offer),
+    advantage: savingLabel(offer) ?? offer.extras[0] ?? offer.description ?? "",
+  }));
+}
 
 function LogoMark() {
   return (
@@ -114,119 +97,20 @@ function LogoMark() {
   );
 }
 
-function StatusPill({ status }: { status: Booking["status"] }) {
-  const cls = status === "Confirmée" ? "status-confirmed" : status === "En piste" ? "status-live" : "status-pending";
-  return <span className={"status-pill " + cls}><i />{status}</span>;
-}
-
-function Sparkline({ values, positive = true }: { values: number[]; positive?: boolean }) {
-  if (!values || values.length < 2) return <svg className="sparkline" viewBox="0 0 110 38" aria-hidden="true" />;
-  const points = values.map((value, i) => {
-    const x = (i / (values.length - 1)) * 110;
-    const y = 34 - (value / Math.max(...values)) * 27;
-    return x + "," + y;
-  }).join(" ");
-  return (
-    <svg className="sparkline" viewBox="0 0 110 38" aria-hidden="true">
-      <polyline points={points} fill="none" stroke={positive ? "#b7ff39" : "#ff7b72"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function KpiCard({
-  label, value, change, detail, icon: Icon, values, negative,
-}: {
-  label: string; value: string; change: string; detail: string;
-  icon: typeof Activity; values: number[]; negative?: boolean;
-}) {
-  return (
-    <article className="kpi-card">
-      <div className="kpi-top">
-        <span className="kpi-icon"><Icon size={18} /></span>
-        <span className={"trend " + (negative ? "negative" : "")}>
-          {negative ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}{change}
-        </span>
-      </div>
-      <p>{label}</p>
-      <div className="kpi-value-row">
-        <div><strong>{value}</strong><small>{detail}</small></div>
-        <Sparkline values={values} positive={!negative} />
-      </div>
-    </article>
-  );
-}
-
-function RevenueChart({ period }: { period: string }) {
-  const data = chartData[period] ?? [];
-  const labels = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
-  if (data.length === 0) {
-    return <div className="revenue-chart empty"><div className="empty-state"><Activity size={22} /><strong>Aucune donnée</strong><span>Le chiffre d’affaires s’affichera une fois les ventes connectées.</span></div></div>;
-  }
-  const peak = Math.max(...data, 1);
-  return (
-    <div className="revenue-chart">
-      <div className="y-axis"><span>15k</span><span>10k</span><span>5k</span><span>0</span></div>
-      <div className="chart-grid">
-        <i /><i /><i /><i />
-        <div className="bars">
-          {data.map((value, index) => (
-            <div className="bar-column" key={labels[index]}>
-              <div className="bar-hit"><span className="bar-tip">{Math.round(value * 155)} DH</span><b style={{ height: (value / peak) * 100 + "%" }} /></div>
-              <small>{labels[index]}</small>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TrackMap({ drivers = [], live = false }: { drivers?: LiveDriver[]; live?: boolean }) {
-  const { points, start } = useTrackRoute(); // same adjustable track as the live circuit editor
-  const path = makeSmoothRoute(points);
-  const startPt = points[Math.min(start, points.length - 1)] ?? points[0];
-  const laps = drivers.reduce((max, d) => Math.max(max, d.laps), 0);
-  const best = drivers.map((d) => d.best).filter((b) => b && b !== "—").sort()[0] ?? "—";
-  return (
-    <div className="track-map">
-      <div className="track-topline"><span><i /> {live ? "Course active" : "En attente"}</span><strong>{live ? `${drivers.length} karts` : "—"}</strong></div>
-      <svg viewBox={`0 0 ${TRACK_WIDTH} ${TRACK_HEIGHT}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Carte de la piste MegaKart">
-        <defs><filter id="glow"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter></defs>
-        <path className="track-shadow" d={path} />
-        <path className="track-line" d={path} />
-        {startPt && <g className="route-marker start-marker" transform={`translate(${startPt.x} ${startPt.y})`}><circle r="11" /><text textAnchor="middle" y="4">D</text></g>}
-        {drivers.map((driver, index) => {
-          const pt = points[Math.floor((index * points.length) / Math.max(drivers.length, 1))] ?? points[0];
-          return <g key={driver.kart} className="driver-dot" transform={`translate(${pt.x} ${pt.y})`}><circle r="14" style={{ fill: driver.color }} /><text textAnchor="middle" y="4">{driver.kart}</text></g>;
-        })}
-      </svg>
-      <div className="track-meta">
-        <span><small>Piste</small><b>Indoor A</b></span>
-        <span><small>Tour</small><b>{live ? laps : "—"}</b></span>
-        <span><small>Meilleur tour</small><b className="lime">{best}{best !== "—" ? "s" : ""}</b></span>
-      </div>
-    </div>
-  );
-}
-
-function Leaderboard({ drivers = [], expanded = false }: { drivers?: LiveDriver[]; expanded?: boolean }) {
-  return (
-    <div className={"leaderboard " + (expanded ? "expanded" : "")}>
-      <div className="leader-head"><span>POS</span><span>PILOTE</span><span>MEILLEUR</span><span>ÉCART</span></div>
-      {drivers.length === 0 && <div className="empty-state"><Trophy size={22} /><strong>Aucun pilote en piste</strong><span>Le classement s’affichera au départ de la course.</span></div>}
-      {drivers.map((driver) => (
-        <div className="leader-row" key={driver.kart}>
-          <strong className={driver.rank === 1 ? "first" : ""}>{String(driver.rank).padStart(2, "0")}</strong>
-          <div className="driver">
-            <span style={{ background: driver.color }}>{driver.name.split(" ").map((n) => n[0]).join("")}</span>
-            <p><b>{driver.name}</b><small>{driver.kart} · Dernier {driver.last}</small></p>
-          </div>
-          <b className="lap">{driver.best}</b>
-          <small className={driver.rank === 1 ? "leader-badge" : "gap"}>{driver.gap}</small>
-        </div>
-      ))}
-    </div>
-  );
+/**
+ * The waiting badge.
+ *
+ * It lives in the sidebar rather than in the Liste d'attente page because its whole job is to
+ * be seen from the OTHER pages: an operator looking at Sessions has no other way to learn that
+ * someone just walked in. That means this poll runs all day, which is why it is slower than the
+ * page's own - a badge four seconds stale is still a badge, and the desk server is on this PC.
+ */
+function QueueBadge() {
+  const { reservations } = useQueue(8000);
+  const groups = waitingCount(reservations);
+  const label = badgeLabel(groups);
+  if (!label) return null;
+  return <i className="nav-badge" title={badgeTitle(groups, waitingPilots(reservations))}>{label}</i>;
 }
 
 function Sidebar({
@@ -250,13 +134,15 @@ function Sidebar({
             const Icon = item.icon;
             return (
               <button key={item.label} className={active === item.label ? "active" : ""} onClick={() => { onSelect(item.label); closeMobile(); }}>
-                <Icon size={18} /><span>{item.label}</span>{item.live && <i className="live-dot" />}
+                <Icon size={18} /><span>{item.label}</span>
+                {item.live && <i className="live-dot" />}
+                {item.badge === "queue" && <QueueBadge />}
               </button>
             );
           })}
         </nav>
         <div className="sidebar-bottom">
-          <div className="system-status"><span><i /> Systèmes opérationnels</span><small>Dernière synchro · maintenant</small></div>
+          <SystemStatus />
           <button className="profile"><span className="avatar">MK</span><span><strong>Manager Fès</strong><small>Administrateur</small></span><MoreHorizontal size={18} /></button>
         </div>
       </aside>
@@ -316,131 +202,6 @@ function Topbar({ openMenu, search, setSearch }: { openMenu: () => void; search:
         <button className="primary-button"><CalendarDays size={17} /><span>Nouvelle réservation</span></button>
       </div>
     </header>
-  );
-}
-
-function Overview({
-  search, selectedBooking, setSelectedBooking,
-}: {
-  search: string; selectedBooking: Booking | null; setSelectedBooking: (booking: Booking | null) => void;
-}) {
-  const [period, setPeriod] = useState("7 jours");
-  const [track, setTrack] = useState("Toutes les pistes");
-  const [liveSync, setLiveSync] = useState(true);
-  const live = useLiveRace();
-  const filteredBookings = useMemo(() => {
-    const query = search.toLowerCase().trim();
-    if (!query) return bookings;
-    return bookings.filter((booking) => Object.values(booking).join(" ").toLowerCase().includes(query));
-  }, [search]);
-
-  return (
-    <>
-      <div className="page-heading dashboard-controls">
-        <div className="heading-actions">
-          <label className="sync-toggle"><input type="checkbox" checked={liveSync} onChange={() => setLiveSync(!liveSync)} /><span /><small>{liveSync ? "Données en direct" : "Synchro en pause"}</small></label>
-          <Select value={track} onValueChange={setTrack}>
-            <SelectTrigger className="dash-select"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="Toutes les pistes">Toutes les pistes</SelectItem><SelectItem value="Indoor A">Indoor A</SelectItem><SelectItem value="Junior B">Junior B</SelectItem></SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <section className="kpi-grid">
-        <KpiCard label="Chiffre d’affaires" value="—" change="—" detail="En attente des ventes" icon={CircleDollarSign} values={[]} />
-        <KpiCard label="Sessions vendues" value="—" change="—" detail="En attente des ventes" icon={TicketCheck} values={[]} />
-        <KpiCard label="Clients actifs" value="—" change="—" detail="En attente des clients" icon={UsersRound} values={[]} />
-        <KpiCard label="Pilotes en piste" value={live.drivers.length ? String(live.drivers.length) : "—"} change="LIVE" detail={live.sessionActive ? "Session en cours" : "Aucune session"} icon={Activity} values={[]} />
-      </section>
-
-      <section className="analytics-grid">
-        <article className="panel revenue-panel">
-          <div className="panel-header">
-            <div><span className="panel-kicker">PERFORMANCE</span><h2>Chiffre d’affaires</h2></div>
-            <div className="revenue-total"><strong>—</strong><span>En attente</span></div>
-            <Select value={period} onValueChange={setPeriod}><SelectTrigger className="period-select"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="7 jours">7 jours</SelectItem><SelectItem value="30 jours">30 jours</SelectItem><SelectItem value="Ce mois">Ce mois</SelectItem></SelectContent></Select>
-          </div>
-          <RevenueChart period={period} />
-        </article>
-        <article className="panel occupancy-panel">
-          <div className="panel-header"><div><span className="panel-kicker">AUJOURD’HUI</span><h2>Occupation des pistes</h2></div><button className="ghost-icon"><MoreHorizontal size={19} /></button></div>
-          <div className="occupancy-body">
-            <div className="radial"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="49" /><circle className="radial-value" cx="60" cy="60" r="49" style={{ strokeDashoffset: 308 }} /></svg><div><strong>—</strong><span>occupation</span></div></div>
-            <div className="occupancy-stats">
-              <div><span><i className="green" /> Indoor A</span><b>—</b><u><i style={{ width: "0%" }} /></u></div>
-              <div><span><i className="blue" /> Junior B</span><b>—</b><u><i style={{ width: "0%" }} /></u></div>
-              <p><Clock3 size={14} /> En attente des réservations</p>
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section className="live-grid">
-        <article className="panel race-panel">
-          <div className="panel-header"><div><span className={"panel-kicker " + (live.sessionActive ? "live" : "")}><i /> {live.sessionActive ? "LIVE · COURSE EN COURS" : "PISTE · EN ATTENTE"}</span><h2>Suivi de piste</h2></div></div>
-          <TrackMap drivers={live.drivers} live={live.sessionActive} />
-        </article>
-        <article className="panel leaderboard-panel">
-          <div className="panel-header"><div><span className="panel-kicker">CLASSEMENT</span><h2>Top pilotes</h2></div><Trophy size={19} className="muted-icon" /></div>
-          <Leaderboard drivers={live.drivers} />
-        </article>
-      </section>
-
-      <section className="sales-grid">
-        <article className="panel packs-panel">
-          <div className="panel-header"><div><span className="panel-kicker">VENTES</span><h2>Packs les plus vendus</h2></div></div>
-          <div className="empty-state"><PackageCheck size={22} /><strong>Aucune vente enregistrée</strong><span>Le classement des packs s’affichera une fois les ventes connectées.</span></div>
-        </article>
-        <article className="panel wallet-panel">
-          <div className="panel-header"><div><span className="panel-kicker">PASS MOBILE</span><h2>Apple & Google Wallet</h2></div><Smartphone size={19} className="muted-icon" /></div>
-          <div className="wallet-hero"><div className="wallet-card"><div><LogoMark /><QrCode size={42} /></div><span>MEGAKART PASS</span><strong>— points</strong></div><div className="wallet-copy"><strong>—</strong><span>Pass actifs</span><p>En attente</p></div></div>
-          <div className="wallet-stats"><span><b>—</b><small>Ajouts ce mois</small></span><span><b>—</b><small>Taux d’usage</small></span><span><b>—</b><small>Scans entrée</small></span></div>
-        </article>
-      </section>
-
-      <section className="panel bookings-panel">
-        <div className="panel-header"><div><span className="panel-kicker">PLANNING</span><h2>Prochaines réservations</h2></div><button className="text-button">Voir le planning <ChevronRight size={15} /></button></div>
-        <Table>
-          <TableHeader><TableRow><TableHead>HEURE</TableHead><TableHead>CLIENT</TableHead><TableHead>PACK</TableHead><TableHead>PILOTES</TableHead><TableHead>MONTANT</TableHead><TableHead>STATUT</TableHead><TableHead /></TableRow></TableHeader>
-          <TableBody>
-            {filteredBookings.map((booking) => (
-              <TableRow key={booking.id} onClick={() => setSelectedBooking(booking)} className="booking-row">
-                <TableCell><strong className="time-cell">{booking.time}</strong><small>{booking.id}</small></TableCell>
-                <TableCell><div className="customer-cell"><span>{booking.initials}</span><p><b>{booking.customer}</b><small>{booking.source}</small></p></div></TableCell>
-                <TableCell><b>{booking.pack}</b></TableCell>
-                <TableCell><UsersRound size={14} /> {booking.racers}</TableCell>
-                <TableCell><b>{booking.amount}</b></TableCell>
-                <TableCell><StatusPill status={booking.status} /></TableCell>
-                <TableCell><ChevronRight size={16} /></TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {filteredBookings.length === 0 && <div className="empty-state"><Search size={23} /><strong>Aucun résultat</strong><span>Essayez un autre nom ou numéro de réservation.</span></div>}
-      </section>
-
-      <Sheet open={Boolean(selectedBooking)} onOpenChange={(open) => !open && setSelectedBooking(null)}>
-        <SheetContent className="booking-sheet">
-          {selectedBooking && <>
-            <SheetHeader><SheetDescription>RÉSERVATION {selectedBooking.id}</SheetDescription><SheetTitle>{selectedBooking.customer}</SheetTitle></SheetHeader>
-            <div className="sheet-body">
-              <div className="sheet-status"><StatusPill status={selectedBooking.status} /><span>{selectedBooking.time} · Aujourd’hui</span></div>
-              <div className="ticket-visual">
-                <span><Flag size={18} /> {selectedBooking.pack}</span><strong>{selectedBooking.amount}</strong><small>{selectedBooking.racers} pilotes · Piste Indoor A</small>
-                <div><QrCode size={72} /><p>Scannez à l’accueil<small>Code sécurisé {selectedBooking.id}</small></p></div>
-              </div>
-              <div className="detail-list">
-                <p><span>Source</span><b>{selectedBooking.source}</b></p>
-                <p><span>Paiement</span><b>{selectedBooking.status === "À encaisser" ? "À régler sur place" : "Validé"}</b></p>
-                <p><span>Créneau</span><b>{selectedBooking.time} – {Number(selectedBooking.time.slice(0, 2)) + 1}:00</b></p>
-              </div>
-              <button className="primary-button full"><QrCode size={17} /> Ouvrir le ticket</button>
-              <button className="secondary-button full">Modifier la réservation</button>
-            </div>
-          </>}
-        </SheetContent>
-      </Sheet>
-    </>
   );
 }
 
@@ -531,6 +292,8 @@ function RaceCircuitMap({ selectedKart, drivers = [] }: { selectedKart: string; 
 
   const saveRoute = () => {
     window.localStorage.setItem("megakart-track-layout", JSON.stringify({ version: TRACK_LAYOUT_VERSION, points: routePoints, start: startIndex, finish: finishIndex }));
+    // Share it with the desk so the other screens draw this circuit too, not just this browser.
+    void saveSharedTrack({ points: routePoints, start: startIndex, finish: finishIndex });
     notifyTrackChanged();
     setEditing(false);
     setMarkerMode(null);
@@ -798,6 +561,11 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
   const gokarts = useGokartsSessions(); // live GoKarts session plan (from GoServer export)
   const { sessions: history } = useHistory();
   const { signups, formUrl, state: signupState, update: updateSignup } = useSignups();
+  // MegaKart Timing Control (the ActiveBox chrono): kart map for the form, race state for the panel.
+  const timingView = useTiming();
+  // The races the chrono has already saved. Watching the current race tells it when to look
+  // again, so the race that was just finished is in the list without reloading the page.
+  const raceHistory = useRaceHistory(timingView.race?.raceId ?? null, timingView.race?.state ?? null);
   const [result, setResult] = useState<HistorySession | null>(null);
   const [name, setName] = useState("");
   const [type, setType] = useState<SessionType>("practice");
@@ -807,6 +575,18 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
     { name: "", kart: "", transponder: "" },
   ];
   const [rows, setRows] = useState(emptyRows());
+  // Starting grid: row order IS the grid (P1 first). Unless the operator ticks "ordre manuel",
+  // the grid is drawn at random when the session is created - same rule as Timing Control.
+  const [gridManual, setGridManual] = useState(false);
+  const shuffleGrid = () => setRows((current) => {
+    const filled = current.filter((r) => r.name.trim());
+    const empty = current.filter((r) => !r.name.trim());
+    for (let i = filled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [filled[i], filled[j]] = [filled[j], filled[i]];
+    }
+    return [...filled, ...empty];
+  });
   const [notice, setNotice] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
 
   const inp: React.CSSProperties = { background: "#0e1520", color: "#e8eef5", border: "1px solid #26303d", borderRadius: 8, padding: "9px 11px", fontSize: 14, width: "100%", fontFamily: "inherit", boxSizing: "border-box" };
@@ -838,21 +618,78 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
     });
   };
 
+  // Everything the form still needs before it can be sent. The button only exists when this
+  // is empty, and each field wears its own reason in red until it is fixed.
+  const issues = sessionFormIssues({ name, durationMin, rows });
+  const [touched, setTouched] = useState(false);
+  const shown = touched ? issues : [];
+  const bad = (msg: string | null): React.CSSProperties => (msg ? { ...inp, borderColor: "#ff6b69", boxShadow: "0 0 0 2px rgba(255,107,105,.18)" } : inp);
+  const note = (msg: string | null) => (msg
+    ? <small style={{ display: "block", marginTop: 4, fontSize: 11, color: "#ff9795" }}>{msg}</small>
+    : null);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const drivers = rows
-      .filter((r) => r.name.trim())
+    if (issues.length) { setTouched(true); return; }   // Enter too early: now show what is missing
+    let ordered = rows.filter((r) => r.name.trim());
+    if (!gridManual) {
+      // Random grid, drawn now so the form, the MegaKart session and the chrono all agree.
+      ordered = [...ordered];
+      for (let i = ordered.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+      }
+      setRows([...ordered, ...rows.filter((r) => !r.name.trim())]);
+    }
+    const drivers = ordered
       .map((r) => ({ name: r.name.trim(), kartNumber: Number(r.kart) || 0, transponder: r.transponder.trim() || undefined, color: r.color }));
+    // A kart carries one transponder, so the same kart twice means the same transponder twice:
+    // the chrono would keep only one of the two drivers. Catch it here, with the names.
+    const duplicates = (key: (d: typeof drivers[number]) => string | number, label: string) => {
+      const seen = new Map<string | number, string>();
+      for (const d of drivers) {
+        const value = key(d);
+        if (!value) continue;
+        const first = seen.get(value);
+        if (first) return `${label} ${value} est attribué deux fois : ${first} et ${d.name}.`;
+        seen.set(value, d.name);
+      }
+      return null;
+    };
+    const clash = duplicates((d) => d.kartNumber, "Le kart")
+      ?? duplicates((d) => (d.transponder ?? timingView.karts.find((k) => k.kart === d.kartNumber)?.transponder ?? ""), "Le transpondeur");
+    if (clash) {
+      setNotice({ tone: "warn", text: clash });
+      return;
+    }
     if (!name.trim() || drivers.length === 0) {
       setNotice({ tone: "warn", text: "Un nom de session et au moins un pilote sont requis." });
       return;
     }
     create({ name, type, durationSec: durationMin * 60, drivers });
-    setNotice({ tone: "ok", text: `Session « ${name.trim()} » créée côté MegaKart et activée. Les noms s’afficheront en direct dès que le transpondeur passe.` });
+    // Hand the same drivers to the chrono. Timing Control resolves each kart's transponder from
+    // its own permanent map, so a wrong or missing kart number is refused there, by name.
+    const forChrono = drivers.filter((d) => d.kartNumber > 0).map((d, i) => ({ name: d.name, kart: d.kartNumber, grid: i + 1 }));
+    void (async () => {
+      try {
+        const res = await timing.prepare(name.trim(), durationMin * 60_000, forChrono);
+        if (res.success) setNotice({ tone: "ok", text: `Session « ${name.trim()} » créée et envoyée au chrono (${res.raceId}). Appuyez sur DÉPART quand les karts sont en grille.` });
+        else setNotice({ tone: "warn", text: `Session créée côté MegaKart, mais le chrono a refusé : ${explainTimingError(res.error, res.message)}` });
+      } catch (e) {
+        setNotice({ tone: "warn", text: e instanceof TimingOffline
+          ? `Session « ${name.trim()} » créée côté MegaKart. Le chrono (Timing Control) est hors ligne : lancez-le puis « Envoyer au chrono ».`
+          : `Session créée, chrono injoignable : ${String(e)}` });
+      }
+      timingView.refresh();
+    })();
     setName("");
     setDurationMin(8);
     setType("practice");
     setRows(emptyRows());
+    setTouched(false);
+    // The next thing to do is on the race deck: take the operator there instead of leaving them
+    // looking at a blank form that has just done its job.
+    window.setTimeout(() => document.getElementById("race-control")?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
   };
 
   const sendToApex = async (id: string) => {
@@ -914,42 +751,80 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
         <div className="panel-header"><div><span className="panel-kicker">NOUVELLE SESSION</span><h2>Créer une session</h2></div></div>
         <form onSubmit={submit} style={{ display: "grid", gap: 16, padding: "4px 2px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12 }}>
-            <label><span style={lab}>Nom de la session</span><input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder="Course #28" /></label>
+            <label><span style={lab}>Nom de la session</span><input style={bad(issueFor(shown, "name"))} value={name} onChange={(e) => { setTouched(true); setName(e.target.value); }} placeholder="Course #28" />{note(issueFor(shown, "name"))}</label>
             <label><span style={lab}>Type</span>
               <select style={inp} value={type} onChange={(e) => setType(e.target.value as SessionType)}>
                 {SESSION_TYPE_LABELS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </label>
-            <label><span style={lab}>Durée (min)</span><input style={inp} type="number" min={1} max={240} value={durationMin} onChange={(e) => setDurationMin(Number(e.target.value) || 0)} /></label>
+            <label><span style={lab}>Durée (min)</span><input style={bad(issueFor(shown, "duration"))} type="number" min={1} max={240} value={durationMin} onChange={(e) => { setTouched(true); setDurationMin(Number(e.target.value) || 0); }} />{note(issueFor(shown, "duration"))}</label>
           </div>
 
           <div>
             <span style={lab}>Pilotes &amp; karts</span>
             <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "30px 2fr 1fr 1fr 36px", gap: 10, fontSize: 11, color: "#8aa0b6", textTransform: "uppercase", letterSpacing: ".04em" }}>
-                <span /><span>Pilote</span><span>Kart n°</span><span>Transpondeur</span><span />
+              <div style={{ display: "grid", gridTemplateColumns: "40px 30px 2fr 1fr 1fr 36px", gap: 10, fontSize: 11, color: "#8aa0b6", textTransform: "uppercase", letterSpacing: ".04em" }}>
+                <span>Grille</span><span /><span>Pilote</span><span>Kart n°</span><span>Transpondeur</span><span />
               </div>
               {rows.map((r, i) => (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "30px 2fr 1fr 1fr 36px", gap: 10, alignItems: "center" }}>
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "40px 30px 2fr 1fr 1fr 36px", gap: 10, alignItems: "start" }}>
+                  <strong style={{ color: r.name.trim() ? "#d8ff35" : "#3a4450", fontFamily: "monospace" }}>{`P${rows.filter((x, k) => k <= i && x.name.trim()).length || i + 1}`}</strong>
                   <span title={r.color ? `Pilote choisi à l’inscription` : undefined} style={{ display: "grid", placeItems: "center" }}>
                     {r.color ? <DriverAvatar pilot={r.color} seed={r.name} size="28px" /> : null}
                   </span>
-                  <input style={inp} value={r.name} onChange={(e) => setRow(i, "name", e.target.value)} placeholder={`Pilote ${i + 1}`} />
-                  <input style={inp} value={r.kart} onChange={(e) => setRow(i, "kart", e.target.value)} placeholder="6" inputMode="numeric" />
-                  <input style={inp} value={r.transponder} onChange={(e) => setRow(i, "transponder", e.target.value)} placeholder="23 (optionnel)" />
+                  <div>
+                    <input style={bad(issueFor(shown, "row", i, "name"))} value={r.name} onChange={(e) => { setTouched(true); setRow(i, "name", e.target.value); }} placeholder={`Pilote ${i + 1}`} />
+                    {note(issueFor(shown, "row", i, "name"))}
+                  </div>
+                  <div>
+                    <input style={bad(issueFor(shown, "row", i, "kart"))} title={issueFor(shown, "row", i, "kart") ?? undefined}
+                      value={r.kart} onChange={(e) => { setTouched(true); setRow(i, "kart", e.target.value); }} placeholder="6" inputMode="numeric" list="timing-karts" />
+                    {note(issueFor(shown, "row", i, "kart"))}
+                  </div>
+                  <input style={inp} value={r.transponder || (timingView.karts.find((k) => String(k.kart) === r.kart.trim())?.transponder ?? "")}
+                    onChange={(e) => setRow(i, "transponder", e.target.value)} placeholder="auto (Timing Control)" />
                   <button type="button" aria-label="Retirer le pilote" onClick={() => setRows((rr) => rr.filter((_, idx) => idx !== i))} style={{ ...inp, width: 36, height: 38, display: "grid", placeItems: "center", cursor: "pointer", padding: 0 }}><X size={15} /></button>
                 </div>
               ))}
             </div>
-            <button type="button" className="secondary-button" style={{ marginTop: 10 }} onClick={() => setRows((r) => [...r, { name: "", kart: "", transponder: "" }])}><PlusCircle size={15} /> Ajouter un pilote</button>
+            {/* Kart numbers known to the chrono, with their transponders: typing is still allowed. */}
+            <datalist id="timing-karts">
+              {timingView.karts.filter((k) => k.enabled).map((k) => <option key={k.kart} value={String(k.kart)}>{`Kart ${k.kart} · ${k.transponder}`}</option>)}
+            </datalist>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+              <button type="button" className="secondary-button" onClick={() => setRows((r) => [...r, { name: "", kart: "", transponder: "" }])}><PlusCircle size={15} /> Ajouter un pilote</button>
+              <button type="button" className="secondary-button" onClick={() => { shuffleGrid(); setGridManual(true); }} title="Tire la grille au sort : l’ordre des lignes devient P1, P2, P3…"><Flag size={15} /> Grille aléatoire</button>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#8aa0b6" }}>
+                <input type="checkbox" checked={gridManual} onChange={(e) => setGridManual(e.target.checked)} />
+                ordre manuel — garder l’ordre des lignes comme grille
+              </label>
+            </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button type="submit" className="primary-button"><Flag size={16} /> Créer la session</button>
-            <small style={{ color: "#8aa0b6" }}>La session est créée côté MegaKart (« En attente Apex ») — GoKarts n’est pas modifié.</small>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", minHeight: 40 }}>
+            {shown.length === 0 ? (
+              <>
+                <button type="submit" className="primary-button"><Flag size={16} /> Créer la session</button>
+                <small style={{ color: "#8aa0b6" }}>La session est créée côté MegaKart (« En attente Apex ») — GoKarts n’est pas modifié.</small>
+              </>
+            ) : (
+              <small style={{ color: "#ff9795" }}>
+                {issueFor(shown, "rows") ?? `${shown.length} chose${shown.length > 1 ? "s" : ""} à compléter avant de créer la session.`}
+              </small>
+            )}
           </div>
         </form>
       </section>
+
+      <RaceControlPanel
+        view={timingView}
+        draft={{ name, durationMin, rankMode: rankModeFor(type), drivers: rows.filter((r) => r.name.trim()).map((r, i) => ({ name: r.name, kart: Number(r.kart) || 0, color: r.color, grid: i + 1 })) }}
+        onNotice={(tone, text) => setNotice({ tone, text })}
+      />
+
+      {/* Directly under the deck: « Session suivante » is pressed above, the race that just left
+          the deck is found here. */}
+      <RaceHistoryPanel history={raceHistory} />
 
       <section className="qr-reservations-list" aria-label="Sessions créées" style={{ marginTop: 18 }}>
         <header className="qr-list-header" style={{ gridTemplateColumns: "1.6fr 1fr 1fr 2fr 1.4fr" }}>
@@ -1041,6 +916,8 @@ function StatsView() {
         <div><span className="eyebrow"><i /> STATISTIQUES</span><h1>Historique &amp; records</h1><p>Sessions terminées capturées en direct depuis GoKarts, avec les meilleurs temps par pilote.</p></div>
         <span className="history-only-badge"><Trophy size={14} /> {sessions.length} SESSION{sessions.length > 1 ? "S" : ""}</span>
       </header>
+
+      <TrackRecordCard />
 
       <section className="client-history-kpis">
         <article><Flag size={18} /><span><small>SESSIONS</small><strong>{sessions.length}</strong><b>Terminées</b></span></article>
@@ -1144,85 +1021,27 @@ function ReservationsView({ search }: { search: string }) {
 }
 
 function ClientsView({ search }: { search: string }) {
-  const [selectedClient, setSelectedClient] = useState<PastClient | null>(null);
-  const filteredClients = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return pastClients;
-    return pastClients.filter((client) => [client.id, client.name, client.phone, client.email, client.favorite, client.payment, client.profile].join(" ").toLowerCase().includes(query));
-  }, [search]);
-  const totalSessions = pastClients.reduce((sum, client) => sum + client.sessions, 0);
-
-  return (
-    <div className="clients-history-page">
-      <header className="clients-history-hero">
-        <div><span className="eyebrow"><i /> HISTORIQUE CLIENTS</span><h1>Clients passés</h1><p>Uniquement les clients ayant déjà terminé au moins une session. Les inscriptions futures restent dans Réservations.</p></div>
-        <span className="history-only-badge"><CheckCircle2 size={14} /> SESSIONS TERMINÉES UNIQUEMENT</span>
-      </header>
-
-      <section className="client-history-kpis">
-        <article><UsersRound size={18} /><span><small>CLIENTS PASSÉS</small><strong>{pastClients.length}</strong><b>Dossiers détaillés</b></span></article>
-        <article><Flag size={18} /><span><small>SESSIONS TERMINÉES</small><strong>{totalSessions}</strong><b>Historique cumulé</b></span></article>
-        <article><WalletCards size={18} /><span><small>POINTS FIDÉLITÉ</small><strong>{pastClients.reduce((sum, client) => sum + client.points, 0).toLocaleString("fr-FR")}</strong><b>Solde cumulé</b></span></article>
-      </section>
-
-      <section className="past-client-list" aria-label="Liste des clients passés">
-        <header><span>CLIENT</span><span>CONTACT</span><span>DERNIÈRE SESSION</span><span>HISTORIQUE</span><span>OFFRE PRÉFÉRÉE</span><span>PAIEMENT</span><span>DÉPENSÉ</span><span /></header>
-        {filteredClients.map((client) => (
-          <article key={client.id}>
-            <div className="past-client-identity"><i>{client.initials}</i><span><strong>{client.name}</strong><small>{client.id} · {client.profile}</small></span></div>
-            <div className="past-client-contact"><strong>{client.phone}</strong><small>{client.email}</small></div>
-            <div className="past-client-last"><strong>{client.lastVisit.split(" · ")[0]}</strong><small>{client.lastVisit.split(" · ")[1]} · Indoor A</small></div>
-            <div className="past-client-counts"><strong>{client.sessions} sessions</strong><small>{client.visits} visites</small></div>
-            <div className="past-client-offer"><strong>{client.favorite}</strong><small>{client.points} points</small></div>
-            <PaymentMethod method={client.payment} />
-            <div className="past-client-spend"><strong>{client.spend.toLocaleString("fr-FR")} DH</strong><small>Panier moy. {client.average} DH</small></div>
-            <button aria-label={`Voir le dossier de ${client.name}`} onClick={() => setSelectedClient(client)}><ChevronRight size={16} /></button>
-          </article>
-        ))}
-        {filteredClients.length === 0 && <div className="empty-state"><Search size={23} /><strong>Aucun ancien client</strong><span>Aucun dossier ne correspond à cette recherche.</span></div>}
-      </section>
-
-      <Sheet open={Boolean(selectedClient)} onOpenChange={(open) => !open && setSelectedClient(null)}>
-        <SheetContent className="booking-sheet client-history-sheet">
-          {selectedClient && <>
-            <SheetHeader><SheetDescription>DOSSIER {selectedClient.id} · CLIENT PASSÉ</SheetDescription><SheetTitle>{selectedClient.name}</SheetTitle></SheetHeader>
-            <div className="sheet-body client-sheet-body">
-              <div className="client-profile-summary"><i>{selectedClient.initials}</i><span><strong>{selectedClient.profile}</strong><small>Client depuis le {selectedClient.since}</small></span><b>{selectedClient.points}<small>POINTS</small></b></div>
-              <div className="detail-list">
-                <p><span>Téléphone</span><b>{selectedClient.phone}</b></p><p><span>E-mail</span><b>{selectedClient.email}</b></p><p><span>Dernière session</span><b>{selectedClient.lastVisit}</b></p><p><span>Sessions terminées</span><b>{selectedClient.sessions} · {selectedClient.visits} visites</b></p><p><span>Offre préférée</span><b>{selectedClient.favorite}</b></p><p><span>Paiement habituel</span><b>{selectedClient.payment}</b></p><p><span>Total dépensé</span><b>{selectedClient.spend.toLocaleString("fr-FR")} DH</b></p><p><span>Panier moyen</span><b>{selectedClient.average} DH</b></p>
-              </div>
-              <div className="client-session-history"><span>DERNIÈRES ACTIVITÉS</span>{selectedClient.history.map((entry) => <article key={`${entry.date}-${entry.offer}`}><i /><div><strong>{entry.offer}</strong><small>{entry.date} · {entry.result}</small></div><b>{entry.amount}</b></article>)}</div>
-            </div>
-          </>}
-        </SheetContent>
-      </Sheet>
-    </div>
-  );
+  return <ClientsPage search={search} />;
 }
 
 function PassLoyaltyView() {
-  const [selectedPass, setSelectedPass] = useState("Pro");
+  // Subscriptions come from the catalog: anything sold by the week or the month, whatever its
+  // type, so a pass created in Packs & ventes appears here without being entered twice.
+  const { catalog } = useCatalog();
+  const monthly = onSale(catalog, (o) => o.period !== "unique");
+  const entry = monthly.length ? monthly.reduce((a, b) => (b.price < a.price ? b : a)) : null;
   return (
     <div className="commerce-page">
       <header className="commerce-hero">
         <div className="commerce-hero-copy"><span className="eyebrow"><i /> PASS & FIDÉLITÉ</span><h1>Roulez plus.<br /><em>Revenez plus.</em></h1><p>Abonnements mensuels et récompenses de session issus de l’offre officielle Mega Kart.</p></div>
-        <div className="commerce-hero-metrics"><span><small>FORMULES</small><strong>03</strong><b>Abonnements mensuels</b></span><span><small>ENTRÉE</small><strong>450 DH</strong><b>Starter · par mois</b></span><span><small>FIDÉLITÉ</small><strong>04</strong><b>Récompenses possibles</b></span></div>
+        <div className="commerce-hero-metrics"><span><small>FORMULES</small><strong>{String(monthly.length).padStart(2, "0")}</strong><b>Abonnements</b></span><span><small>ENTRÉE</small><strong>{entry ? `${entry.price.toLocaleString("fr-FR")} DH` : "—"}</strong><b>{entry ? `${entry.name} · par ${entry.period === "semaine" ? "semaine" : "mois"}` : "aucune formule"}</b></span><span><small>FIDÉLITÉ</small><strong>04</strong><b>Récompenses possibles</b></span></div>
       </header>
 
       <section className="commerce-section">
-        <div className="commerce-section-head"><div><span>ABONNEMENTS MENSUELS</span><h2>Choisir une formule</h2></div><p>Inscription anticipée incluse dans chaque pass.</p></div>
-        <div className="subscription-grid">
-          {monthlyPasses.map((pass) => (
-            <article key={pass.name} className={"subscription-card " + (selectedPass === pass.name ? "selected" : "")}>
-              <div className="offer-card-top"><span>PASS MENSUEL</span><b>{pass.price.toLocaleString("fr-FR")} DH<small>/ MOIS</small></b></div>
-              <h3>{pass.name.toUpperCase()}</h3>
-              <div className="session-count"><TicketCheck size={19} /><strong>{pass.sessions}</strong><span>sessions par mois</span></div>
-              <ul>{pass.benefits.map((benefit) => <li key={benefit}><CheckCircle2 size={13} />{benefit}</li>)}</ul>
-              <div className="offer-bonus"><Zap size={14} /><span>{pass.bonus}</span></div>
-              <p className="offer-audience"><b>PUBLIC</b>{pass.audience}</p>
-              <button onClick={() => setSelectedPass(pass.name)}>{selectedPass === pass.name ? <CheckCircle2 size={14} /> : <WalletCards size={14} />}{selectedPass === pass.name ? "FORMULE SÉLECTIONNÉE" : "SÉLECTIONNER"}</button>
-            </article>
-          ))}
+        <div className="commerce-section-head"><div><span>ABONNEMENTS</span><h2>Choisir une formule</h2></div><p>Inscription anticipée incluse dans chaque pass.</p></div>
+        <div className="cat-grid">
+          {monthly.map((offer) => <OfferCard key={offer.id} offer={offer} />)}
+          {monthly.length === 0 && <p className="cat-empty">Aucun abonnement en vente — ajoutez-en un dans Packs &amp; ventes.</p>}
         </div>
       </section>
 
@@ -1237,68 +1056,57 @@ function PassLoyaltyView() {
 }
 
 function PacksSalesView() {
-  const [selectedOffer, setSelectedOffer] = useState("Gold");
-  return (
-    <div className="commerce-page">
-      <header className="commerce-hero packs-hero">
-        <div className="commerce-hero-copy"><span className="eyebrow"><i /> PACKS & VENTES</span><h1>Plus vous roulez.<br /><em>Plus vous économisez.</em></h1><p>Packs karting et offres de groupe présentés dans le rapport commercial Mega Kart.</p></div>
-        <div className="commerce-hero-metrics"><span><small>PACKS KARTING</small><strong>03</strong><b>Bronze · Silver · Gold</b></span><span><small>À PARTIR DE</small><strong>250 DH</strong><b>3 sessions</b></span><span><small>OFFRES GROUPE</small><strong>02</strong><b>Famille · Amis</b></span></div>
-      </header>
-
-      <section className="commerce-section">
-        <div className="commerce-section-head"><div><span>PACKS KARTING</span><h2>Offres individuelles</h2></div><p>Des formules progressives pour découvrir, pratiquer ou intensifier l’expérience.</p></div>
-        <div className="pack-offer-grid">
-          {kartingPacks.map((pack) => (
-            <article key={pack.name} className={"pack-offer-card " + (selectedOffer === pack.name ? "selected" : "")}>
-              <div className="offer-card-top"><span>PACK {pack.name.toUpperCase()}</span><b>{pack.price} DH</b></div>
-              {pack.originalPrice && <small className="old-price">PRIX INITIAL · {pack.originalPrice} DH</small>}
-              <h3>{pack.summary}</h3>
-              <div className="pack-volume"><strong>{pack.sessions + pack.bonus}</strong><span>SESSIONS AU TOTAL<small>{pack.bonus > 0 ? `${pack.sessions} + ${pack.bonus} offerte${pack.bonus > 1 ? "s" : ""}` : `${pack.sessions} sessions incluses`}</small></span></div>
-              <ul>{pack.benefits.map((benefit) => <li key={benefit}><CheckCircle2 size={13} />{benefit}</li>)}</ul>
-              <div className="offer-saving"><ArrowDownRight size={14} />{pack.saving}</div>
-              <p className="offer-audience"><b>PUBLIC</b>{pack.audience}</p>
-              <button onClick={() => setSelectedOffer(pack.name)}>{selectedOffer === pack.name ? <CheckCircle2 size={14} /> : <PackageCheck size={14} />}{selectedOffer === pack.name ? "OFFRE SÉLECTIONNÉE" : "SÉLECTIONNER"}</button>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="commerce-section">
-        <div className="commerce-section-head"><div><span>OFFRES DE GROUPE</span><h2>Famille & amis</h2></div><p>Des expériences réunissant plusieurs catégories de participants.</p></div>
-        <div className="group-offer-grid">
-          {groupPacks.map((offer) => <article key={offer.name}><div><span>OFFRE GROUPE</span><h3>{offer.name}</h3><p>{offer.capacity}</p></div><strong>{offer.price} DH</strong><ul>{offer.benefits.map((benefit) => <li key={benefit}><CheckCircle2 size={13} />{benefit}</li>)}</ul><small>{offer.audience}</small></article>)}
-        </div>
-      </section>
-    </div>
-  );
+  return <CatalogPage />;
 }
 
 function ReportsView() {
+  const { catalog } = useCatalog();
+  const offers = onSale(catalog);
+  const rows = catalogReportRows(offers);
+  const maxPrice = Math.max(1, ...offers.map((o) => o.price));
+  const cheapest = offers.length ? offers.reduce((a, b) => (b.price < a.price ? b : a)) : null;
+  const dearest = offers.length ? offers.reduce((a, b) => (b.price > a.price ? b : a)) : null;
+  const count = (f: (o: Offer) => boolean) => offers.filter(f).length;
+  const packs = offers.filter((o) => o.period === "unique" && o.basis === "personne" && o.kind !== "session");
+  const monthly = offers.filter((o) => o.period !== "unique");
+  const groups = offers.filter((o) => o.basis === "groupe");
+  const range = (list: Offer[]) => {
+    if (!list.length) return "—";
+    const n = list.map(totalUnits);
+    const lo = Math.min(...n), hi = Math.max(...n);
+    return lo === hi ? `${lo}` : `${lo} à ${hi}`;
+  };
+  const bestSaving = offers
+    .filter((o) => o.originalPrice != null && o.originalPrice > o.price)
+    .map((o) => ({ o, pct: ((o.originalPrice! - o.price) / o.originalPrice!) * 100 }))
+    .sort((a, b) => b.pct - a.pct)[0] ?? null;
+  const biggest = packs.length ? packs.reduce((a, b) => (totalUnits(b) > totalUnits(a) ? b : a)) : null;
+  const cheapestGroup = groups.length ? groups.reduce((a, b) => (pricePerPerson(b) < pricePerPerson(a) ? b : a)) : null;
   return (
     <div className="commerce-page reports-page">
       <header className="commerce-hero reports-hero">
         <div className="commerce-hero-copy"><span className="eyebrow"><i /> RAPPORT COMMERCIAL</span><h1>Catalogue<br /><em>Mega Kart.</em></h1><p>Synthèse fidèle des offres, tarifs, volumes et avantages documentés.</p></div>
-        <div className="commerce-hero-metrics"><span><small>OFFRES</small><strong>08</strong><b>Commercialisées</b></span><span><small>PRIX MIN.</small><strong>250 DH</strong><b>Pack Bronze</b></span><span><small>PRIX MAX.</small><strong>1 600 DH</strong><b>VIP Racing · mois</b></span></div>
+        <div className="commerce-hero-metrics"><span><small>OFFRES</small><strong>{String(offers.length).padStart(2, "0")}</strong><b>En vente</b></span><span><small>PRIX MIN.</small><strong>{cheapest ? `${cheapest.price.toLocaleString("fr-FR")} DH` : "—"}</strong><b>{cheapest?.name ?? "—"}</b></span><span><small>PRIX MAX.</small><strong>{dearest ? `${dearest.price.toLocaleString("fr-FR")} DH` : "—"}</strong><b>{dearest ? `${dearest.name}${dearest.period === "mois" ? " · mois" : ""}` : "—"}</b></span></div>
       </header>
 
       <section className="report-summary-grid">
-        <article><PackageCheck size={19} /><span><small>PACKS KARTING</small><strong>3</strong><b>3 à 9 sessions</b></span></article>
-        <article><WalletCards size={19} /><span><small>ABONNEMENTS</small><strong>3</strong><b>5 à 20 sessions / mois</b></span></article>
-        <article><UsersRound size={19} /><span><small>OFFRES GROUPE</small><strong>2</strong><b>Famille et amis</b></span></article>
-        <article><Trophy size={19} /><span><small>RÉCOMPENSES</small><strong>4</strong><b>À chaque session</b></span></article>
+        <article><PackageCheck size={19} /><span><small>PACKS INDIVIDUELS</small><strong>{packs.length}</strong><b>{range(packs)} {packs[0] ? packs[0].unit : "sessions"}</b></span></article>
+        <article><WalletCards size={19} /><span><small>ABONNEMENTS</small><strong>{monthly.length}</strong><b>{range(monthly)} par période</b></span></article>
+        <article><UsersRound size={19} /><span><small>OFFRES GROUPE</small><strong>{groups.length}</strong><b>{count((o) => o.kind === "famille")} famille · {count((o) => o.kind === "amis")} amis</b></span></article>
+        <article><Trophy size={19} /><span><small>RÉCOMPENSES</small><strong>{loyaltyRewards.length}</strong><b>À chaque session</b></span></article>
       </section>
 
       <section className="report-workspace">
         <article className="report-price-panel">
-          <div className="commerce-section-head"><div><span>POSITIONNEMENT TARIFAIRE</span><h2>Prix des offres</h2></div><p>Échelle maximale · 1 600 DH</p></div>
-          <div className="price-bars">{catalogReport.map((offer) => <div key={`${offer.category}-${offer.name}`}><span><b>{offer.name}</b><small>{offer.category}</small></span><i><em style={{ "--bar": `${offer.price / 16}%` } as React.CSSProperties} /></i><strong>{offer.price.toLocaleString("fr-FR")} DH</strong></div>)}</div>
+          <div className="commerce-section-head"><div><span>POSITIONNEMENT TARIFAIRE</span><h2>Prix des offres</h2></div><p>Échelle maximale · {maxPrice.toLocaleString("fr-FR")} DH</p></div>
+          <div className="price-bars">{rows.map((offer) => <div key={`${offer.category}-${offer.name}`}><span><b>{offer.name}</b><small>{offer.category}</small></span><i><em style={{ "--bar": `${(offer.price / maxPrice) * 100}%` } as React.CSSProperties} /></i><strong>{offer.price.toLocaleString("fr-FR")} DH</strong></div>)}</div>
         </article>
-        <aside className="report-insight-panel"><span>LECTURE COMMERCIALE</span><h2>Une gamme pour chaque profil.</h2><p>Les packs couvrent la découverte et la pratique régulière. Les abonnements structurent la fidélité mensuelle. Les offres Famille et Amis développent les sorties collectives.</p><div><b>16,7 %</b><span>Économie annoncée sur Bronze</span></div><div><b>9 sessions</b><span>Total inclus dans Gold</span></div><div><b>80 DH</b><span>Coût moyen par personne avec Pack Amis à 5</span></div></aside>
+        <aside className="report-insight-panel"><span>LECTURE COMMERCIALE</span><h2>Une gamme pour chaque profil.</h2><p>Les packs couvrent la découverte et la pratique régulière. Les abonnements structurent la fidélité mensuelle. Les offres Famille et Amis développent les sorties collectives.</p>{bestSaving && <div><b>{bestSaving.pct.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %</b><span>Meilleure économie · {bestSaving.o.name}</span></div>}{biggest && <div><b>{totalUnits(biggest)} {biggest.unit}</b><span>Total inclus dans {biggest.name}</span></div>}{cheapestGroup && <div><b>{pricePerPerson(cheapestGroup).toLocaleString("fr-FR")} DH</b><span>Par personne avec {cheapestGroup.name}{cheapestGroup.people ? ` à ${cheapestGroup.people}` : ""}</span></div>}</aside>
       </section>
 
       <section className="commerce-section catalog-section">
-        <div className="commerce-section-head"><div><span>MATRICE DES OFFRES</span><h2>Détail du catalogue</h2></div><p>Données reprises du rapport Mega Kart.</p></div>
-        <div className="catalog-table-wrap"><table className="catalog-table"><thead><tr><th>CATÉGORIE</th><th>OFFRE</th><th>PRIX</th><th>VOLUME</th><th>AVANTAGE PRINCIPAL</th></tr></thead><tbody>{catalogReport.map((offer) => <tr key={`${offer.category}-${offer.name}`}><td>{offer.category}</td><td><strong>{offer.name}</strong></td><td>{offer.price.toLocaleString("fr-FR")} DH</td><td>{offer.volume}</td><td>{offer.advantage}</td></tr>)}</tbody></table></div>
+        <div className="commerce-section-head"><div><span>MATRICE DES OFFRES</span><h2>Détail du catalogue</h2></div><p>Catalogue en vente, modifiable dans Packs &amp; ventes.</p></div>
+        <div className="catalog-table-wrap"><table className="catalog-table"><thead><tr><th>CATÉGORIE</th><th>OFFRE</th><th>PRIX</th><th>VOLUME</th><th>AVANTAGE PRINCIPAL</th></tr></thead><tbody>{rows.map((offer) => <tr key={`${offer.category}-${offer.name}`}><td>{offer.category}</td><td><strong>{offer.name}</strong></td><td>{offer.price.toLocaleString("fr-FR")} DH</td><td>{offer.volume}</td><td>{offer.advantage}</td></tr>)}</tbody></table></div>
       </section>
     </div>
   );
@@ -1370,7 +1178,6 @@ const preparePageData = (label: string) => Promise.resolve(label);
 export default function Home() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [pageLoading, setPageLoading] = useState(false);
   // null until the URL fragment has been read on the client. Server HTML and the first client render
   // are an empty shell, so hydration always matches and a player's phone opening #souvenir=… never
@@ -1449,7 +1256,7 @@ export default function Home() {
       <div className="workspace">
         <Topbar openMenu={() => setMobileOpen(true)} search={search} setSearch={setSearch} />
         <main className="dashboard-content">
-          {active === "Course en direct" ? <LiveRaceView /> : active === "Liste d\u2019attente" ? <FileAttenteView search={search} /> : active === "Sessions" ? <SessionsView bridgeSync={bridgeSync} /> : active === "Statistiques" ? <StatsView /> : active === "Réservations" ? <ReservationsView search={search} /> : active === "Clients" ? <ClientsView search={search} /> : active === "Pass & fidélité" ? <PassLoyaltyView /> : active === "Packs & ventes" ? <PacksSalesView /> : active === "Carburant" ? <FuelView /> : active === "Rapports" ? <ReportsView /> : <Overview search={search} selectedBooking={selectedBooking} setSelectedBooking={setSelectedBooking} />}
+          {active === "Course en direct" ? <LiveRaceView /> : active === "Liste d\u2019attente" ? <FileAttenteView search={search} /> : active === "Sessions" ? <SessionsView bridgeSync={bridgeSync} /> : active === "Statistiques" ? <StatsView /> : active === "Réservations" ? <ReservationsView search={search} /> : active === "Clients" ? <ClientsView search={search} /> : active === "Pass & fidélité" ? <PassLoyaltyView /> : active === "Packs & ventes" ? <PacksSalesView /> : active === "Carburant" ? <FuelView /> : active === "Rapports" ? <ReportsView /> : <Overview search={search} onOpenQueue={() => navigateToPage("Liste d’attente")} />}
         </main>
       </div>
       <PageTransitionLoader visible={pageLoading} />

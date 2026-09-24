@@ -50,6 +50,25 @@ test("still decodes links made before pilots were added to the format", async ()
   assert.deepEqual(decoded.drivers, [{ name: "Ancien Pilote", kart: "5", laps: 8, bestLapMs: 41000, totalTimeMs: 330000, pilot: null }]);
 });
 
+test("carries the day's best and the track record, for the bars lower down the page", async () => {
+  const withRecords = { ...race, records: { dayBestMs: 24199, dayBestBy: "Mehdi", recordMs: 23594, recordBy: null } };
+  const url = await souvenir.souvenirUrl(withRecords, "https://mega-karts.web.app");
+  const token = url.slice(url.indexOf(souvenir.SOUVENIR_HASH_PREFIX) + souvenir.SOUVENIR_HASH_PREFIX.length);
+  assert.deepEqual(await souvenir.decodeSouvenir(token), withRecords);
+});
+
+test("a link without records decodes with none, and a page that predates records ignores them", async () => {
+  const packed = [1, "S-NEW", 1790000000, 0, "MegaKart Fès", [["Saad Bahja", "3", 14, 27414, -1, 4]], [24199, "Mehdi", 23594, ""]];
+  const token = "j" + Buffer.from(JSON.stringify(packed), "utf8").toString("base64url");
+  const decoded = await souvenir.decodeSouvenir(token);
+  assert.deepEqual(decoded.records, { dayBestMs: 24199, dayBestBy: "Mehdi", recordMs: 23594, recordBy: null });
+  // What the page already online does: take the first six elements and nothing more.
+  const [version, id, , , , drivers] = packed;
+  assert.equal(version, 1);
+  assert.equal(id, "S-NEW");
+  assert.equal(drivers.length, 1);
+});
+
 test("rejects links that are not souvenirs", async () => {
   await assert.rejects(souvenir.decodeSouvenir("xnot-a-souvenir"));
 });
