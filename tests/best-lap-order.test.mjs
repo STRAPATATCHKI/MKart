@@ -6,7 +6,9 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 
 const src = readFileSync(new URL("../lib/best-lap-order.ts", import.meta.url), "utf8");
-const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+// The rule itself is in lib/ranking-rules.mjs: point the typed wrapper's import at the real file.
+const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
+  .replace("./ranking-rules.mjs", new URL("../lib/ranking-rules.mjs", import.meta.url).href);
 const { byBestLap } = await import("data:text/javascript;base64," + Buffer.from(js).toString("base64"));
 
 test("SESSION 5 as it stood: the best lap leads, whatever the laps", () => {

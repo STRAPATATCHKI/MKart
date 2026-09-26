@@ -72,22 +72,42 @@ export function loadTrackRoute(): TrackRoute {
  * an instant first paint and as the fallback when the desk is unreachable.
  */
 export async function fetchSharedTrack(): Promise<TrackRoute | null> {
+  return (await readSharedTrack()).route;
+}
+
+/** The desk's circuit, and whether the desk answered at all (null route + reachable = never drawn). */
+export async function readSharedTrack(): Promise<{ reachable: boolean; route: TrackRoute | null }> {
   try {
     const res = await fetch("/api/track", { cache: "no-store" });
-    if (!res.ok) return null;
+    if (!res.ok || !(res.headers.get("content-type") || "").includes("application/json")) return { reachable: false, route: null };
     const body = (await res.json()) as { layout?: { points?: RoutePoint[]; start?: number; finish?: number; version?: number } | null };
     const layout = body?.layout;
-    if (!layout || !Array.isArray(layout.points) || layout.points.length < 3) return null;
+    if (!layout || !Array.isArray(layout.points) || layout.points.length < 3) return { reachable: true, route: null };
     const points = layout.version === TRACK_LAYOUT_VERSION
       ? layout.points
       : layout.points.map((p) => ({ ...p, x: p.x * (TRACK_WIDTH / LEGACY_TRACK_WIDTH) }));
     return {
-      points,
-      start: typeof layout.start === "number" ? layout.start : DEFAULT_ROUTE.start,
-      finish: typeof layout.finish === "number" ? layout.finish : DEFAULT_ROUTE.finish,
+      reachable: true,
+      route: {
+        points,
+        start: typeof layout.start === "number" ? layout.start : DEFAULT_ROUTE.start,
+        finish: typeof layout.finish === "number" ? layout.finish : DEFAULT_ROUTE.finish,
+      },
     };
   } catch {
-    return null;   // desk closed, or a static host with no API: keep whatever is on screen
+    return { reachable: false, route: null };   // desk closed, or a static host with no API: keep whatever is on screen
+  }
+}
+
+/** Whether this browser holds a circuit someone drew and saved (not just the built-in default). */
+export function hasLocalTrack(): boolean {
+  try {
+    const saved = localStorage.getItem(TRACK_STORAGE_KEY);
+    if (!saved) return false;
+    const parsed = JSON.parse(saved) as { points?: unknown };
+    return Array.isArray(parsed.points) && parsed.points.length >= 3;
+  } catch {
+    return false;
   }
 }
 

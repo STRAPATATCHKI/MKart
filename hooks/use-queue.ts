@@ -53,6 +53,8 @@ export type Reservation = {
   deletedFrom?: QueueStatus | null;
   /** The pack as corrected at the counter, priced by the desk from the catalog. Null: the client's own choice. */
   packOverride?: PackOverride | null;
+  /** Racing again: the reservation raced before, and the code the phone showed on the first inscription. */
+  replayOf?: { code: string; clientCode: string | null } | null;
   sessionId: string | null;
 };
 
@@ -88,6 +90,9 @@ export type QueueView = {
   erase: (code: string) => Promise<void>;
   /** Change the pack at the counter; null returns to the client's own choice. */
   setPack: (code: string, offerId: string | null, by: string) => Promise<void>;
+  /** Race again: a new reservation in "En attente" for these pilots (all when empty), with this pack.
+   *  Resolves to the new reservation, or to why it was not created. */
+  replay: (code: string, input: { pilotIds: string[]; offerId: string | null; by: string; clientCode: string | null }) => Promise<Reservation | string>;
   addWalkIn: (input: { contactName: string; phone?: string; pilots: { fullName: string; kartColor: string }[]; paymentMethod: string }) => Promise<Reservation | null>;
 };
 
@@ -124,7 +129,17 @@ export function useQueue(pollMs = 4000): QueueView {
     alive.current = true;
     void refresh();
     const t = setInterval(() => void refresh(), pollMs);
-    return () => { alive.current = false; clearInterval(t); };
+    // A browser slows timers in a tab left in the background: coming back to the dashboard
+    // asks at once instead of showing the queue as it was minutes ago.
+    const onShow = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => {
+      alive.current = false;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("focus", onShow);
+    };
   }, [refresh, pollMs]);
 
   const act = useCallback(async (code: string, action: string, body: unknown) => {
@@ -172,6 +187,26 @@ export function useQueue(pollMs = 4000): QueueView {
         void refresh();
       }
     }, [refresh]),
+    replay: useCallback(async (code: string, input: { pilotIds: string[]; offerId: string | null; by: string; clientCode: string | null }) => {
+      try {
+        const r = await fetch(`/api/queue/${encodeURIComponent(code)}/rejouer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pilotIds: input.pilotIds, offerId: input.offerId, par: input.by, clientCode: input.clientCode }),
+        });
+        if (!r.ok) {
+          const why = ((await r.json().catch(() => null)) as { error?: string } | null)?.error;
+          // A desk started before "Rejouer" existed does not know the action yet.
+          throw new Error(why === "Action inconnue." ? "Serveur d’accueil trop ancien : appuyez sur Synchroniser, puis réessayez." : why || String(r.status));
+        }
+        const created: Reservation = await r.json();
+        setReservations((l) => [created, ...l]);
+        return created;
+      } catch (e) {
+        return e instanceof Error && e.message && !/^\d+$/.test(e.message) && e.message !== "Failed to fetch" ? e.message
+          : "Nouvelle course non enregistrée. Vérifiez la borne et réessayez.";
+      }
+    }, []),
     addWalkIn: useCallback(async (input) => {
       try {
         const r = await fetch("/api/reservations", {

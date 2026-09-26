@@ -8,8 +8,16 @@
   The fuel barrel exactly as the MegaKart dashboard draws it (components/fuel/fuel-barrel.tsx),
   as one self-contained file to copy into the app.
 
-  Level  = fuel.today.stockL / fuel.today.capacityL   (from GET /v1/garage), clamped 0..1
+  Level  = fuel.today.levelPct / 100   (from GET /v1/garage; = stockL / capacityL, clamped 0..1)
   Low    = fuel.today.low  (stock at or under the reserve) -> red instead of orange
+
+  Beside it, the dashboard's little readout - every figure is in fuel.today:
+    RELEVÉ · hh:mm   readingL   (measuredAt)      the morning barrel reading
+    APPOINTS         refillL    ("+12 L")         poured in since
+    ROULAGE          burnedSinceReadingL ("−8.4 L") burned by races and free runs since the reading
+    RESTE            stockL     (lime)            what is left now
+  and the "Autonomie": hoursLeft ("5 h 12") and sessionsLeft (sessions of sessionMinutes, whole fleet).
+  readingL / stockL / levelPct are null before the morning reading: show "—", barrel empty.
   The liquid slides to its level in 1.1 s, two waves drift across it, bubbles rise through it.
   Open this file in a browser and use the slider to see it move.
 -->
@@ -31,6 +39,13 @@
     100% { transform: translateY(-190px) scale(1.1); opacity: 0; }
   }
   .demo { display: flex; gap: 12px; align-items: center; font-size: 13px; color: #8a9185; }
+  /* the dashboard's readout under the reading (app/fuel.css .fuel-readout) */
+  .readout { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 12px; min-width: 360px;
+    border: 1px solid #1b2019; border-radius: 10px; background: #0c110c; }
+  .readout div { display: grid; gap: 3px; }
+  .readout dt { color: #858b82; font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .readout dd { margin: 0; font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .readout .lime { color: #d8ff35; }
 </style>
 </head>
 <body>
@@ -93,6 +108,13 @@
   <g class="fb-tick"><line x1="166" y1="26" x2="182" y2="26"/><text x="160" y="29.5" text-anchor="end">100</text></g>
 </svg>
 
+<dl class="readout" id="readout">
+  <div><dt>Relevé · 09:00</dt><dd>260 L</dd></div>
+  <div><dt>Appoints</dt><dd>+100 L</dd></div>
+  <div><dt>Roulage</dt><dd>−0 L</dd></div>
+  <div><dt>Reste</dt><dd class="lime">360 L</dd></div>
+</dl>
+
 <div class="demo">
   <input id="level" type="range" min="0" max="100" value="72">
   <span id="label">72 %</span>
@@ -100,6 +122,18 @@
 </div>
 
 <script>
+  // The readout from fuel.today, formatted like the dashboard ("12.5 L", no ".0").
+  var L = function (v) { return v.toFixed(1).replace(/\.0$/, "") + " L"; };
+  function setReadout(t) {
+    var hhmm = t.measuredAt ? " · " + new Date(t.measuredAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
+    var dd = document.querySelectorAll("#readout dd"), dt = document.querySelectorAll("#readout dt");
+    dt[0].textContent = "Relevé" + hhmm;
+    dd[0].textContent = t.readingL == null ? "—" : L(t.readingL);
+    dd[1].textContent = t.refillL ? "+" + L(t.refillL) : "—";
+    dd[2].textContent = t.burnedSinceReadingL > 0 ? "−" + L(t.burnedSinceReadingL) : "—";
+    dd[3].textContent = t.stockL == null ? "—" : L(t.stockL);
+  }
+
   // The only thing that changes: how far down the liquid sits, and orange or red.
   //   level = stockL / capacityL (0..1), low = fuel.today.low
   function setBarrel(level, low) {
@@ -113,6 +147,10 @@
   function update() {
     document.getElementById("label").textContent = range.value + " %";
     setBarrel(range.value / 100, low.checked);
+    // Demo numbers for a 500 L barrel; in the app, pass GET /v1/garage's fuel.today.
+    var stock = 5 * Number(range.value);
+    setReadout({ readingL: 260, refillL: 100, measuredAt: new Date().setHours(9, 0, 0, 0),
+                 burnedSinceReadingL: Math.max(0, 360 - stock), stockL: stock });
   }
   range.addEventListener("input", update);
   low.addEventListener("change", update);

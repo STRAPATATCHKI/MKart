@@ -33,7 +33,8 @@
     "signups": {
       ".read": "auth != null",
       ".indexOn": [
-        "createdAt"
+        "createdAt",
+        "status"
       ],
       "$id": {
         ".write": "auth != null || (!data.exists() && newData.exists() && root.child('invites').child(newData.child('token').val()).child('used').val() === false && root.child('invites').child(newData.child('token').val()).child('expiresAt').val() > now)",

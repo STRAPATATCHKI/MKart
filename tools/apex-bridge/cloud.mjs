@@ -53,6 +53,7 @@ async function accessToken() {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${unsigned}.${signature}` }),
+    signal: AbortSignal.timeout(30_000),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.access_token) throw new Error(`OAuth ${res.status}: ${body.error_description || body.error || "refusé"}`);
@@ -73,6 +74,9 @@ async function rtdb(method, at, data) {
     method,
     headers: data ? { "Content-Type": "application/json" } : undefined,
     body: data ? JSON.stringify(data) : undefined,
+    // A call that never answers becomes an error the caller already handles, instead of a
+    // read that blocks the next one forever.
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`base de données ${res.status}: ${(await res.text()).slice(0, 120)}`);
   return res.json().catch(() => null);

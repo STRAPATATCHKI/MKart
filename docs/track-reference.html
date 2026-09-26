@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MegaKart circuit</title>
+<!--
+  The MegaKart circuit exactly as the dashboard draws it (components/track/live-track.tsx), as one
+  self-contained file to copy into the app. Open it in a browser: the karts in it are a demo.
+
+  Data, from the MegaKart API (server side, with the key):
+    GET /v1/track  ->  { width: 704, height: 268, points, start, path, lengthPx, drawn, savedAt }
+    GET /v1/live   ->  { state, updatedAt, clockStarted, drivers: [{ driver, kart, color, grid,
+                         position, laps, lastLapMs, bestLapMs, lastPassingAt }] }
+  In the app: drawTrack(svg, track) once (again when savedAt changes), then placeKarts(svg, track,
+  live) about 30 times a second, with the latest /v1/live (or /v1/live/stream).
+
+  Coordinates are those of a 704 x 268 box: keep viewBox="0 0 704 268" and let the SVG scale.
+-->
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #080b07; color: #f4f6ed; font-family: Inter, system-ui, sans-serif; }
+  .wrap { width: min(980px, calc(100vw - 32px)); }
+  /* the dashboard's frame around the map */
+  .track-frame { padding: 6px; border-radius: 10px; background: #0b1016; }
+  svg { display: block; width: 100%; height: auto; }
+  p { color: #8a958f; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="track-frame">
+    <svg id="track" viewBox="0 0 704 268" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Position des karts sur le circuit"></svg>
+  </div>
+  <p>Le circuit de MegaKart Fès, avec quatre karts simulés. Dans l’app, <code>track</code> vient de <code>/v1/track</code> et <code>live</code> de <code>/v1/live</code>.</p>
+</div>
+
+<script>
+// ---------------------------------------------------------------- the dashboard's drawing
+var SVG_NS = "http://www.w3.org/2000/svg";
+// Pilot colours 1-8, as in /v1/live drivers[].color.
+var PILOT_HEX = { 1: "#8b5cf6", 2: "#f5d90a", 3: "#f97316", 4: "#45c74a", 5: "#3a4048", 6: "#2b7de9", 7: "#e23b3b", 8: "#e9eef4" };
+var FALLBACK = ["#d8ff35", "#38e07b", "#2b7de9", "#e23b3b", "#f97316", "#8b5cf6", "#f5d90a", "#e9eef4"];
+var HOLD_BACK = 0.03;          // a kart waits just short of the line until its crossing is real
+var TYPICAL_LAP_MS = 35000;    // only until somebody has set a lap
+
+function el(name, attrs, parent) {
+  var node = document.createElementNS(SVG_NS, name);
+  for (var k in attrs) node.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+// The loop in driving order from the timing line, closed, with the length at every corner.
+function measure(track) {
+  var pts = track.points, n = pts.length, ordered = [];
+  for (var i = 0; i <= n; i++) ordered.push(pts[(track.start + i) % n]);
+  var lengths = [0], total = 0;
+  for (var j = 1; j < ordered.length; j++) {
+    total += Math.hypot(ordered[j].x - ordered[j - 1].x, ordered[j].y - ordered[j - 1].y);
+    lengths.push(total);
+  }
+  return { ordered: ordered, lengths: lengths, total: total };
+}
+
+// Where a kart is at `fraction` (0 = on the line, 0.5 = half a lap), and which way it points.
+function pointAt(fraction, table) {
+  var target = (((fraction % 1) + 1) % 1) * table.total, i = 1;
+  while (i < table.lengths.length - 1 && table.lengths[i] < target) i++;
+  var seg = table.lengths[i] - table.lengths[i - 1] || 1, t = (target - table.lengths[i - 1]) / seg;
+  var a = table.ordered[i - 1], b = table.ordered[i];
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, angle: Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI };
+}
+
+function drawTrack(svg, track) {
+  svg.innerHTML = "";
+  var table = measure(track);
+  // /v1/track sends `path`; built here too for an older answer without it.
+  var d = track.path || table.ordered.map(function (p, i) { return (i ? "L " : "M ") + p.x + " " + p.y; }).join(" ");
+  var layers = [
+    { stroke: "#1d2530", "stroke-width": 26 },   // verge
+    { stroke: "#2b3644", "stroke-width": 20 },   // kerb
+    { stroke: "#141a22", "stroke-width": 16 },   // tarmac
+    { stroke: "#3a4450", "stroke-width": 1.5, "stroke-dasharray": "7 9", opacity: 0.5 },   // centre line
+  ];
+  layers.forEach(function (l) {
+    var attrs = { d: d, fill: "none", "stroke-linecap": "round", "stroke-linejoin": "round" };
+    for (var k in l) attrs[k] = l[k];
+    el("path", attrs, svg);
+  });
+  // The one timing loop: start AND finish.
+  var line = pointAt(0, table);
+  var flag = el("g", { transform: "translate(" + line.x + " " + line.y + ") rotate(" + line.angle + ")" }, svg);
+  el("rect", { x: -3, y: -15, width: 6, height: 30, fill: "#e9eef4" }, flag);
+  el("rect", { x: -3, y: -15, width: 6, height: 5, fill: "#0b0e05" }, flag);
+  el("rect", { x: -3, y: -5, width: 6, height: 5, fill: "#0b0e05", transform: "translate(0,10)" }, flag);
+  var label = el("text", { y: -22, "text-anchor": "middle", fill: "#d8ff35", "font-size": 11, "font-weight": 700, transform: "rotate(" + (-line.angle) + ")" }, flag);
+  label.textContent = "DÉPART / ARRIVÉE";
+  el("g", { id: "karts" }, svg);
+  svg.__table = table;
+}
+
+// ---------------------------------------------------------------- the karts
+// The PC only knows when a kart crosses the line. Between crossings: its own last lap as the
+// pace (the field's average before it has one), never past the line before the real crossing.
+function placeKarts(svg, live, now) {
+  var table = svg.__table, layer = svg.querySelector("#karts");
+  layer.innerHTML = "";
+  var drivers = (live && live.drivers) || [];
+  if (!table || !drivers.length) return;
+  var running = live.state === "RUNNING" && live.clockStarted !== false;
+  var offset = Date.now() - live.updatedAt;                 // your clock minus the venue's
+  var venueNow = (now || Date.now()) - offset;
+  var known = drivers.map(function (d) { return d.lastLapMs; }).filter(function (v) { return v > 0; });
+  var reference = known.length ? known.reduce(function (a, b) { return a + b; }, 0) / known.length : TYPICAL_LAP_MS;
+
+  var placed = drivers.map(function (d, i) {
+    var fraction = 0;
+    if (d.lastPassingAt != null && running) {
+      var pace = d.lastLapMs > 0 ? d.lastLapMs : reference;
+      fraction = Math.min((venueNow - d.lastPassingAt) / pace, 1 - HOLD_BACK);
+    } else if (d.grid != null) {
+      fraction = 1 - HOLD_BACK - (d.grid - 1) * 0.012;      // on the grid, behind the line
+    }
+    var at = pointAt(fraction, table);
+    return { d: d, x: at.x, y: at.y, colour: PILOT_HEX[d.color] || FALLBACK[i % 8], progress: (d.laps || 0) + fraction };
+  });
+  // The leader is drawn last, on top.
+  placed.sort(function (a, b) { return a.progress - b.progress; }).forEach(function (p) {
+    var g = el("g", { transform: "translate(" + p.x + " " + p.y + ")" }, layer);
+    el("circle", { r: 15, fill: p.colour, opacity: 0.22 }, g);
+    el("circle", { r: 15, fill: "none", stroke: p.colour, "stroke-width": 2.5, opacity: 0.95 }, g);
+    if (p.d.position === 1) el("circle", { r: 19.5, fill: "none", stroke: "#d8ff35", "stroke-width": 1.5, opacity: 0.9 }, g);
+    // (The dashboard also draws a small kart photo, 26 x 26, inside the ring.)
+    var name = el("text", { y: 24, "text-anchor": "middle", "font-size": 10, "font-weight": 700, fill: p.colour,
+                            stroke: "#0b0e05", "stroke-width": 0.7, "paint-order": "stroke" }, g);
+    name.textContent = p.d.driver;
+  });
+}
+
+// ---------------------------------------------------------------- demo data
+// The MegaKart Fès circuit as saved on 25/09/2026 - exactly what GET /v1/track returns. In the app,
+// always use the API's answer (it changes whenever the circuit is redrawn at the venue).
+var TRACK = { width: 704, height: 268, start: 0, finish: 0, drawn: true, lengthPx: 2488.9,
+  path: "M 276.9 227.8 L 625.2 244.3 L 686.3 194.9 L 682.2 87.7 L 650.6 54.7 L 606.6 42.3 L 237 61.5 L 254.2 142.6 L 540 122 L 605.3 124.8 L 634.1 152.9 L 603.2 192.8 L 182.7 177.7 L 195.1 45.7 L 116.8 49.2 L 114 221.7 L 246.6 225.1 Z",
+  points: [
+  { x: 276.9, y: 227.8 }, { x: 625.2, y: 244.3 }, { x: 686.3, y: 194.9 }, { x: 682.2, y: 87.7 }, { x: 650.6, y: 54.7 },
+  { x: 606.6, y: 42.3 }, { x: 237, y: 61.5 }, { x: 254.2, y: 142.6 }, { x: 540, y: 122 }, { x: 605.3, y: 124.8 },
+  { x: 634.1, y: 152.9 }, { x: 603.2, y: 192.8 }, { x: 182.7, y: 177.7 }, { x: 195.1, y: 45.7 }, { x: 116.8, y: 49.2 },
+  { x: 114, y: 221.7 }, { x: 246.6, y: 225.1 } ] };
+
+var svg = document.getElementById("track");
+drawTrack(svg, TRACK);
+
+// Four simulated karts crossing the line at their own pace, as /v1/live would report them.
+var t0 = Date.now();
+var DEMO = [
+  { driver: "Saad", kart: 3, color: 3, grid: 1, lap: 23600 },
+  { driver: "Hasnae", kart: 7, color: 6, grid: 2, lap: 24400 },
+  { driver: "Yassen", kart: 12, color: 4, grid: 3, lap: 25100 },
+  { driver: "Khadija", kart: 5, color: 1, grid: 4, lap: 26300 },
+];
+function demoLive() {
+  var now = Date.now();
+  var drivers = DEMO.map(function (k) {
+    var run = now - t0 + k.grid * 900, laps = Math.floor(run / k.lap);
+    return { driver: k.driver, kart: k.kart, color: k.color, grid: k.grid, laps: laps,
+             lastLapMs: laps ? k.lap : null, bestLapMs: laps ? k.lap : null, lastPassingAt: now - (run % k.lap) };
+  });
+  drivers.slice().sort(function (a, b) { return (a.bestLapMs || 1e9) - (b.bestLapMs || 1e9); })
+    .forEach(function (d, i) { d.position = i + 1; });
+  return { state: "RUNNING", clockStarted: true, updatedAt: now, drivers: drivers };
+}
+(function frame() {
+  placeKarts(svg, demoLive());
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

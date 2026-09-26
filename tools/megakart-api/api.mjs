@@ -14,6 +14,9 @@
 
 import crypto from "node:crypto";
 import { cloudConfigured, cloudGet } from "../apex-bridge/cloud.mjs";
+import { buildDayReport, inputFromReports } from "../../lib/day-report-rules.mjs";
+import { dayReportHtml } from "../../lib/day-report-html.mjs";
+import { dayReportPdf } from "../../lib/day-report-pdf.mjs";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -26,6 +29,18 @@ function send(res, code, body) {
 const read = (path) => cloudGet(`reports/${path}`);
 const values = (obj) => (obj && typeof obj === "object" ? Object.values(obj) : []);
 const badRequest = (message) => Object.assign(new Error(message), { status: 400 });
+
+/** The venue PC counts as online while its heartbeat (/reports/meta, every minute) is this recent. */
+const ONLINE_WITHIN_MS = 6 * 60_000;
+
+/** Whether the venue PC is sending, worked out here so no app has to compare clocks. */
+async function pcStatus() {
+  const meta = await read("meta.json");
+  const seen = typeof meta?.updatedAt === "number" ? meta.updatedAt : null;
+  const age = seen != null ? Math.max(0, Date.now() - seen) : null;
+  return { venue: meta?.venue ?? "MegaKart Fès", pcSeenAt: seen, pcAgeSeconds: age != null ? Math.round(age / 1000) : null,
+           pcOnline: age != null && age < ONLINE_WITHIN_MS, timeZone: "Africa/Casablanca" };
+}
 
 /** The venue's "today", as the venue PC last wrote it: a hosted server's own clock is UTC. */
 async function today() {
@@ -45,6 +60,22 @@ async function range(url) {
   }
   const t = await today();
   return [t, t];
+}
+
+/**
+ * The Rapport du jour (lib/day-report-rules.mjs): the day's races against the day's till, from
+ * the /reports documents. Reservations are looked up from a week before, so one booked earlier
+ * and cashed that day is found; Firebase keeps them 30 days, so older days have races only.
+ */
+async function dayReport(day) {
+  const weekBefore = new Date(Date.parse(`${day}T12:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
+  const [races, reservations, catalog] = await Promise.all([
+    read(`races.json?orderBy="day"&equalTo="${day}"`),
+    read(`reservations.json?orderBy="day"&startAt="${weekBefore}"&endAt="${day}"`),
+    cloudGet("catalog.json"),
+  ]);
+  const input = inputFromReports({ day, raceDocs: values(races), reservationDocs: values(reservations) });
+  return buildDayReport({ day, ...input, offers: Array.isArray(catalog?.offers) ? catalog.offers : [] });
 }
 
 async function byDay(node, url) {
@@ -105,14 +136,20 @@ export function createApiHandler({ apiKey, log = console.log }) {
 
       if (path === "/health" || path === "/v1" || path === "/v1/health") {
         if (!configured) { send(res, 503, { ok: false, error: key.length < 24 ? "MEGAKART_API_KEY manquante." : "Clé Firebase introuvable : variable FIREBASE_SERVICE_ACCOUNT." }); return true; }
-        const meta = await read("meta.json");
-        send(res, 200, { ok: true, venue: meta?.venue ?? "MegaKart Fès", dataUpdatedAt: meta?.updatedAt ?? null });
+        const pc = await pcStatus();
+        send(res, 200, { ok: true, venue: pc.venue, dataUpdatedAt: pc.pcSeenAt, pcOnline: pc.pcOnline, pcAgeSeconds: pc.pcAgeSeconds, timeZone: pc.timeZone });
         return true;
       }
       if (!configured) { send(res, 503, { error: "API non configurée sur ce serveur." }); return true; }
       if (!keyOk(req)) { send(res, 401, { error: "Clé API invalide." }); return true; }
 
-      if (path === "/v1/today") { send(res, 200, (await read("today.json")) ?? null); return true; }
+      if (path === "/v1/today") {
+        // With the PC's heartbeat: `updatedAt` only moves when the figures do (a quiet hour leaves
+        // it still), so it says nothing about whether the PC is on - `pcOnline` does.
+        const [t, pc] = await Promise.all([read("today.json"), pcStatus()]);
+        send(res, 200, { ...(t ?? {}), pcOnline: pc.pcOnline, pcSeenAt: pc.pcSeenAt, pcAgeSeconds: pc.pcAgeSeconds, timeZone: pc.timeZone });
+        return true;
+      }
       if (path === "/v1/live") { send(res, 200, (await read("live.json")) ?? { state: "IDLE" }); return true; }
       if (path === "/v1/live/stream") { openStream(req, res); return true; }
       if (path === "/v1/track") { send(res, 200, (await read("track.json")) ?? null); return true; }
@@ -142,6 +179,25 @@ export function createApiHandler({ apiKey, log = console.log }) {
         // ?laps=0 for a light list; the laps of one race are at /v1/races/<id>.
         if (url.searchParams.get("laps") === "0") for (const r of races) for (const d of r.racers || []) delete d.lapTimesMs;
         send(res, 200, races);
+        return true;
+      }
+      // The day report: data, a PDF to download, or the printable page. ?day=AAAA-MM-JJ, default today.
+      const report = path.match(/^\/v1\/reports\/day(\.json|\.pdf|\.html)?$/);
+      if (report) {
+        const day = url.searchParams.get("day") || (await today());
+        if (!DAY.test(day)) throw badRequest("day : AAAA-MM-JJ");
+        const doc = await dayReport(day);
+        if (report[1] === ".pdf") {
+          const pdf = dayReportPdf(doc);
+          res.writeHead(200, { "Content-Type": "application/pdf", "Content-Length": pdf.length, "Cache-Control": "no-store",
+            "Content-Disposition": `attachment; filename="MegaKart-rapport-${day}.pdf"` });
+          res.end(pdf);
+        } else if (report[1] === ".html") {
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+          res.end(dayReportHtml(doc));
+        } else {
+          send(res, 200, doc);
+        }
         return true;
       }
       const race = path.match(/^\/v1\/races\/([^/]+)$/);

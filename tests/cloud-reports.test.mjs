@@ -110,6 +110,16 @@ test("the circuit is the drawn one, or the dashboard's default when none is save
   const drawn = R.trackDoc({ version: 2, start: 1, points: [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 5, y: 6 }] });
   assert.deepEqual(drawn.points[0], { x: 1, y: 2 });
   assert.equal(drawn.start, 1);
+  assert.equal(drawn.drawn, true);
+  assert.equal(fallback.drawn, false, "the placeholder says it is one");
+});
+
+test("the circuit comes with the path the dashboard draws: from the timing line, straight lines, closed", () => {
+  const doc = R.trackDoc({ version: 2, start: 1, savedAt: "2026-09-25T20:00:00.000Z",
+    points: [{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 40 }] });
+  assert.equal(doc.path, "M 30 0 L 30 40 L 0 0 Z");
+  assert.equal(doc.lengthPx, 120, "30 + 40 + 50");
+  assert.equal(doc.savedAt, Date.parse("2026-09-25T20:00:00.000Z"));
 });
 
 test("a payment made two ways is 'mixed', with each part in its own column", () => {
@@ -140,5 +150,13 @@ test("the Garage for the app: today's fuel from the reading, races and free runs
   assert.deepEqual(doc.parts.toReorder.map((p) => p.name), ["Plaquettes"]);
   assert.deepEqual([doc.parts.moves[0].kind, doc.parts.moves[0].kart], ["sortie", 7]);
   assert.equal(doc.fuelDay.day, "2026-09-24");
+  // The barrel's level and the "Autonomie", as the dashboard shows them (default fleet: 4 junior, 8 GT).
+  const stock = doc.fuelToday.stockL;
+  assert.equal(doc.fuelToday.levelPct, Math.round((stock / 500) * 100));
+  assert.equal(doc.fuelToday.fleetLph, 89.6, "4 x 2.4 + 8 x 10");
+  assert.equal(doc.fuelToday.hoursLeft, Math.round((stock / 89.6) * 100) / 100);
+  assert.equal(doc.fuelToday.sessionsLeft, Math.floor(stock / (89.6 * 8 / 60)));
+  assert.equal(R.garageDoc({ now, fuelFile: { days: [] }, garageFile: null, races: [], stints: [] }).fuelToday.levelPct, null,
+    "no morning reading: no level");
   assert.equal(R.garageDoc({ now, fuelFile: null, garageFile: null, races: [], stints: [] }).parts, null);
 });

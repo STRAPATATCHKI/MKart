@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useLiveRace, type LiveDriver } from "@/hooks/use-live-race";
-import { useSessions, useActiveRoster } from "@/hooks/use-sessions";
+import type { LiveDriver } from "@/hooks/use-live-race";
+import { useSessions } from "@/hooks/use-sessions";
 import { useHistory, type HistorySession } from "@/hooks/use-history";
 import { useGokartsSessions } from "@/hooks/use-gokarts-sessions";
 import { TRACK_WIDTH, TRACK_HEIGHT, LEGACY_TRACK_WIDTH, TRACK_LAYOUT_VERSION, defaultRoutePoints, makeSmoothRoute, notifyTrackChanged, saveSharedTrack, type RoutePoint } from "@/lib/track";
@@ -22,7 +22,7 @@ import { SouvenirPage } from "@/components/souvenir/souvenir-page";
 import { ReservationPage } from "@/components/reservation/reservation-page";
 import { DeskOnlyNotice } from "@/components/desk-only-notice";
 import { useIsCompact } from "@/hooks/use-compact";
-import { ChronoPanel } from "@/components/chrono/chrono-panel";
+import { LiveRaceConsole } from "@/components/live/live-race-console";
 import { FileAttenteView } from "@/components/caisse/file-attente-view";
 import { ResultSheet } from "@/components/results/result-sheet";
 import { useBridgeSessionSync, type BridgeSync } from "@/hooks/use-bridge-sync";
@@ -41,7 +41,7 @@ type DriverRow = { name: string; kart: string; transponder: string; color?: numb
 import { SOUVENIR_HASH_PREFIX } from "@/lib/race-souvenir";
 import {
   Activity, Banknote, Bell, CalendarDays, CheckCircle2,
-  ChevronRight, Clock3, CreditCard, Crosshair, Flag, LayoutDashboard, Menu, MonitorPlay, MoreHorizontal,
+  ChevronRight, Clock3, CreditCard, Crosshair, Flag, LayoutDashboard, Menu, MoreHorizontal,
   PackageCheck, Pencil, PlusCircle, QrCode, Radio, RotateCcw, Save, Search,
   Trash2, Trophy, Undo2, UsersRound, WalletCards, Wrench, X, Zap,
 } from "lucide-react";
@@ -290,10 +290,17 @@ function RaceCircuitMap({ selectedKart, drivers = [] }: { selectedKart: string; 
     return () => window.clearTimeout(restoreTimer);
   }, []);
 
+  // Whether the last ENREGISTRER reached the desk (every screen and the app) or stayed here.
+  const [shareNote, setShareNote] = useState<{ ok: boolean; text: string } | null>(null);
   const saveRoute = () => {
     window.localStorage.setItem("megakart-track-layout", JSON.stringify({ version: TRACK_LAYOUT_VERSION, points: routePoints, start: startIndex, finish: finishIndex }));
     // Share it with the desk so the other screens draw this circuit too, not just this browser.
-    void saveSharedTrack({ points: routePoints, start: startIndex, finish: finishIndex });
+    // The desk takes it only from its own PC; said out loud, so a drawing made on a laptop or a
+    // phone is never believed to be on the TV and in the app when it is not.
+    setShareNote(null);
+    void saveSharedTrack({ points: routePoints, start: startIndex, finish: finishIndex }).then((ok) => setShareNote(ok
+      ? { ok: true, text: "Piste enregistrée pour tous les écrans et l’application." }
+      : { ok: false, text: "Enregistrée sur cet appareil seulement : le serveur d’accueil n’accepte la piste que depuis le PC de l’accueil (http://127.0.0.1:5190). Refaites ENREGISTRER sur ce PC." }));
     notifyTrackChanged();
     setEditing(false);
     setMarkerMode(null);
@@ -464,96 +471,22 @@ function RaceCircuitMap({ selectedKart, drivers = [] }: { selectedKart: string; 
       </svg>
       <div className="map-compass"><span>N</span><i /></div>
       <div className="circuit-label"><span>{editing ? editorTool === "draw" ? "MAINTENEZ LE CLIC GAUCHE ET DESSINEZ LA PISTE" : markerMode ? `CLIQUEZ POUR PLACER ${markerMode === "start" ? "LE DÉPART" : "L’ARRIVÉE"}` : "GLISSEZ LES POINTS · CLIC DROIT POUR AJOUTER · DOUBLE-CLIC POUR SUPPRIMER" : "SECTEUR 3"}</span><b>Indoor A · 620 m</b></div>
+      {shareNote && !editing ? (
+        <div className="circuit-share-note" role="status"
+          style={{ position: "absolute", left: 12, right: 12, bottom: 12, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                   background: shareNote.ok ? "rgba(56,224,123,.14)" : "rgba(255,107,105,.16)", color: shareNote.ok ? "#8ff0b4" : "#ffb3b2",
+                   border: `1px solid ${shareNote.ok ? "rgba(56,224,123,.4)" : "rgba(255,107,105,.45)"}` }}>
+          {shareNote.text}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function LiveRaceView() {
-  const roster = useActiveRoster(); // active MegaKart session → transponder→name/kart overlay
-  const live = useLiveRace(roster);
-  const drivers = live.drivers;
-  const [selectedKart, setSelectedKart] = useState<string | null>(null);
-  const selectedDriver = drivers.find((driver) => driver.kart === selectedKart) ?? drivers[0] ?? null;
-  const bestDriver = drivers.filter((d) => d.best && d.best !== "—").sort((a, b) => a.best.localeCompare(b.best))[0] ?? null;
-  const laps = drivers.reduce((max, d) => Math.max(max, d.laps), 0);
-  const statusBadge = {
-    running: { cls: "live", label: "● EN DIRECT" },
-    finished: { cls: "wait", label: "SESSION TERMINÉE" },
-    waiting: { cls: "wait", label: "EN ATTENTE DE DÉPART" },
-    // deriveStatus() returns "idle" when the bridge is NOT attached to a feed socket, so the
-    // old "FEED CONNECTÉ" label asserted the exact opposite of the truth.
-    idle: { cls: "demo", label: "AUCUN FLUX" },
-    offline: { cls: "demo", label: "PONT HORS LIGNE" },
-  }[live.status];
-  return (
-    <div className="race-console">
-      <header className="race-console-header">
-        <div><span className="race-live"><i /> COURSE EN DIRECT</span><h1>RACE CONTROL</h1><p>Flux temps réel Apex GoKarts · {drivers.length} pilote{drivers.length > 1 ? "s" : ""}</p></div>
-        <div className="race-session-actions">
-          <span className={"race-network race-feed-" + (live.bridgeConnected ? (live.feedConnected ? "live" : "wait") : "demo")}><i /> APEX {live.bridgeConnected ? (live.feedConnected ? "CONNECTÉ" : "PONT OK") : "HORS LIGNE"}</span>
-          <span className={"race-network race-feed-" + statusBadge.cls}><Zap size={13} /> {statusBadge.label}</span>
-          <button type="button" className="race-network race-bigscreen-button" onClick={() => window.open("/#ecran", "megakart-ecran")}><MonitorPlay size={13} /> ÉCRAN GÉANT</button>
-        </div>
-      </header>
-
-      {/* MegaKart's own race window, counted from raw crossings — independent of GoKarts'
-          session boundaries and of its lap arithmetic. */}
-      <ChronoPanel sessionId={live.megakartSession?.id ?? null} sessionName={live.megakartSession?.name ?? null} />
-
-      <section className="race-summary-strip" aria-label="Résumé de la course">
-        <div className="summary-primary"><span>MEILLEUR TOUR</span><strong>{bestDriver ? bestDriver.best : "—"}</strong><b>{bestDriver ? `${bestDriver.name} · ${bestDriver.kart}` : "—"}</b></div>
-        <div><span>PILOTES</span><strong>{drivers.length || "—"}</strong><b>EN PISTE</b></div>
-        <div><span>TOUR MAX</span><strong>{laps || "—"}</strong><b>TOURS BOUCLÉS</b></div>
-        <div className="summary-status"><span>STATUT</span><strong><i /> {live.sessionActive ? "EN COURSE" : "EN ATTENTE"}</strong><b>{live.feedConnected ? "FEED OK" : "FEED HORS LIGNE"}</b></div>
-      </section>
-
-      {drivers.length === 0 ? (
-        <section className="race-monitor-grid">
-          <article className="race-module timing-module" style={{ gridColumn: "1 / -1" }}>
-            <div className="race-module-head"><div><span>CHRONOMÉTRAGE</span><h2>CLASSEMENT LIVE</h2></div><b>0</b></div>
-            <div className="empty-state" style={{ padding: "48px 20px" }}>
-              <Flag size={26} />
-              <strong>{live.feedConnected ? "En attente du départ de la course" : "En attente du flux de chronométrage"}</strong>
-              <span>{live.feedConnected
-                ? "Session détectée. Les pilotes, karts et temps au tour s’afficheront dès le drapeau vert."
-                : "Démarrez une session sur le système de chronométrage GoKarts pour voir l’activité en direct."}</span>
-            </div>
-          </article>
-        </section>
-      ) : (
-        <section className="race-monitor-grid">
-          <article className="race-module circuit-module">
-            <div className="race-module-head"><div><span>POSITION LIVE</span><h2>CARTE DU CIRCUIT</h2></div><b><i /> {live.sessionActive ? "EN COURSE" : "EN ATTENTE"}</b></div>
-            <RaceCircuitMap selectedKart={selectedKart ?? ""} drivers={drivers} />
-            <div className="circuit-stats"><span><small>PILOTES</small><b>{drivers.length}</b></span><span><small>TOUR MAX</small><b>{laps}</b></span><span><small>MEILLEUR</small><b className="lime">{bestDriver ? bestDriver.best : "—"}</b></span><span><small>STATUT</small><b>{live.sessionActive ? "VERT" : "—"}</b></span></div>
-          </article>
-
-          <article className="race-module timing-module">
-            <div className="race-module-head"><div><span>CHRONOMÉTRAGE</span><h2>CLASSEMENT LIVE</h2></div><b>{drivers.length}</b></div>
-            <div className="timing-head"><span>POS</span><span>PILOTE</span><span>DERNIER</span><span>ÉCART</span></div>
-            <div className="timing-list">
-              {drivers.map((driver) => (
-                <button key={driver.kart} onClick={() => setSelectedKart(driver.kart)} className={selectedKart === driver.kart ? "selected" : ""} style={{ "--driver": driver.color } as React.CSSProperties}>
-                  <strong>{String(driver.rank).padStart(2, "0")}</strong>
-                  <span className="timing-driver"><i>{driver.name.split(" ").map((part) => part[0]).join("")}</i><span><b>{driver.name}</b><small>KART {driver.kart} · {driver.laps} tours · best {driver.best}</small></span></span>
-                  <b>{driver.last}</b><em>{driver.gap}</em>
-                </button>
-              ))}
-            </div>
-          </article>
-        </section>
-      )}
-
-      {selectedDriver && (
-        <section className="race-driver-summary">
-          <article className="race-module driver-focus" style={{ "--driver": selectedDriver.color } as React.CSSProperties}>
-            <div className="race-module-head"><div><span>PILOTE SÉLECTIONNÉ</span><h2>{selectedDriver.name.toUpperCase()}</h2></div><strong>KART {selectedDriver.kart}</strong></div>
-            <div className="driver-focus-body"><div className="driver-position"><span>P{selectedDriver.rank}</span><small>POSITION</small></div><div><span>MEILLEUR</span><strong>{selectedDriver.best}</strong><span>DERNIER TOUR</span><strong>{selectedDriver.last}</strong></div><div><span>TOURS</span><strong className="lime">{selectedDriver.laps}</strong><span>ÉCART</span><strong>{selectedDriver.gap}</strong></div></div>
-          </article>
-        </section>
-      )}
-    </div>
-  );
+function LiveRaceView({ onOpenControls }: { onOpenControls: () => void }) {
+  // Everything on this page comes from MegaKart Timing Control (components/live). The circuit
+  // editor below stays here: "Ajuster la piste" opens it in place of the live map.
+  return <LiveRaceConsole trackEditor={<RaceCircuitMap selectedKart="" />} onOpenControls={onOpenControls} />;
 }
 
 function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
@@ -1258,7 +1191,7 @@ export default function Home() {
       <div className="workspace">
         <Topbar openMenu={() => setMobileOpen(true)} search={search} setSearch={setSearch} />
         <main className="dashboard-content">
-          {active === "Course en direct" ? <LiveRaceView /> : active === "Liste d\u2019attente" ? <FileAttenteView search={search} /> : active === "Sessions" ? <SessionsView bridgeSync={bridgeSync} /> : active === "Statistiques" ? <StatsView /> : active === "Réservations" ? <ReservationsView search={search} /> : active === "Clients" ? <ClientsView search={search} /> : active === "Pass & fidélité" ? <PassLoyaltyView /> : active === "Packs & ventes" ? <PacksSalesView /> : active === "Garage" ? <GarageView /> : active === "Rapports" ? <ReportsView /> : <Overview search={search} onOpenQueue={() => navigateToPage("Liste d’attente")} />}
+          {active === "Course en direct" ? <LiveRaceView onOpenControls={() => navigateToPage("Sessions")} /> : active === "Liste d\u2019attente" ? <FileAttenteView search={search} /> : active === "Sessions" ? <SessionsView bridgeSync={bridgeSync} /> : active === "Statistiques" ? <StatsView /> : active === "Réservations" ? <ReservationsView search={search} /> : active === "Clients" ? <ClientsView search={search} /> : active === "Pass & fidélité" ? <PassLoyaltyView /> : active === "Packs & ventes" ? <PacksSalesView /> : active === "Garage" ? <GarageView /> : active === "Rapports" ? <ReportsView /> : <Overview search={search} onOpenQueue={() => navigateToPage("Liste d’attente")} />}
         </main>
       </div>
       <PageTransitionLoader visible={pageLoading} />

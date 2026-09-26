@@ -10,6 +10,7 @@
 @import "./reservation.css";
 @import "./chrono.css";
 @import "./file-attente.css";
+@import "./live-race.css";
 
 :root {
   --bg: #050604;

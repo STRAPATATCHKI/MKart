@@ -70,7 +70,9 @@ totals within 30 s. `amount` is `null` when neither the till nor a pack gave one
 `code`, `clientCode` (the code the phone showed the client, e.g. `AZSM`), `status`
 (`EN_ATTENTE`, `AU_GUICHET`, `PAYEE`, `EN_PISTE`, `TERMINEE`, `ABSENT`), `day`, `createdAt`,
 `contactName`, `channel`, `pilots`, `pilotNames`, `pack`, `expectedAmount`, and once paid
-`paidAt`, `paidAmount`, `method`. Cancelled and deleted reservations are not listed.
+`paidAt`, `paidAmount`, `method`. `replayOf` is set when the client came back to race again: the
+code of the reservation raced before (a new reservation, cashed on its own; the first payment
+is unchanged). Cancelled and deleted reservations are not listed.
 
 ### `/reports/races/{raceId}` — every race Timing Control saved (all time)
 
@@ -95,7 +97,10 @@ How to animate the karts on the circuit from these: `docs/megakart-api.md`.
 ### `/reports/track` — the circuit
 
 `width` 704, `height` 268, `points[]` (closed loop, driving order), `start` (index of the timing
-line). The same drawing as the TV and the dashboard.
+line). The same drawing as the TV and the dashboard. Also `path` — the circuit ready for an SVG
+`<path d>`, exactly as the dashboard draws it (straight lines through the points, from the timing
+line, closed) — its length `lengthPx`, `drawn` (`false` while it is still the built-in
+placeholder shape) and `savedAt`. `docs/track-reference.html` draws it and moves karts on it.
 
 ### `/reports/garage` — fuel and spare parts
 
@@ -109,6 +114,9 @@ line). The same drawing as the TV and the dashboard.
 | `burnedSinceReadingL` | what was burned since the reading |
 | `racesL`, `freeRunsL`, `totalL` | burned today by races, by karts going round outside a race (tests, warm-ups), in total |
 | `capacityL`, `reserveL`, `low` | barrel size, alert level, and whether the stock is at or under it |
+| `levelPct` | the barrel drawing's level, 0–100 (`stockL / capacityL`); `null` before the reading |
+| `hoursLeft`, `sessionsLeft` | "Autonomie": hours, and standard sessions of `sessionMinutes`, the stock lasts with the whole fleet on track |
+| `fleetLph`, `fleet` | the whole fleet's burn per hour, and the fleet it counts (`junior`, `gt` karts) |
 | `races[]` | `raceId`, `name`, `at`, `minutes`, `juniorKarts`, `gtKarts`, `litres` |
 | `runs[]` | outside a race: `kart`, `transponder`, `start`, `end`, `passes`, `minutes`, `litres` |
 

@@ -8,7 +8,7 @@
 // go - a race without its drivers, or a payment without its payer, is not much of a report -
 // and the rules let only accounts listed under /staff read any of it.
 
-import { dayFuel, fuelDayKey, liveFuelStock } from "../../lib/fuel-rules.mjs";
+import { dayFuel, fuelDayKey, fuelEstimate, liveFuelStock } from "../../lib/fuel-rules.mjs";
 
 const PAID = new Set(["PAYEE", "EN_PISTE", "TERMINEE"]);
 /** Reservations are sent for this many days; payments, day totals and races are kept for good. */
@@ -59,6 +59,8 @@ export function buildReports(reservations, signups, now = new Date()) {
         pack, expectedAmount: expected,
         paidAt: paid ? ms(r.paidAt) : null, paidAmount: amount,
         method: paid ? (exact && r.paidSplit ? "mixed" : methodOf(r.paymentMethod)) : null,
+        // A client racing again: the reservation raced before.
+        replayOf: (r.replayOf && r.replayOf.code) || null,
       };
     }
 
@@ -170,7 +172,8 @@ const DEFAULT_LAYOUT = {
 };
 
 export function trackDoc(layout) {
-  if (!layout || !Array.isArray(layout.points) || layout.points.length < 3) layout = DEFAULT_LAYOUT;
+  const drawn = !!(layout && Array.isArray(layout.points) && layout.points.length >= 3);
+  if (!drawn) layout = DEFAULT_LAYOUT;
   // Layouts drawn before version 2 were 560 wide; the dashboard stretches them the same way.
   const scale = layout.version === 2 ? 1 : TRACK_WIDTH / LEGACY_TRACK_WIDTH;
   const points = layout.points
@@ -178,7 +181,24 @@ export function trackDoc(layout) {
     .map((pt) => ({ x: Math.round(pt.x * scale * 10) / 10, y: Math.round(pt.y * 10) / 10 }));
   if (points.length < 3) return null;
   const clampIndex = (i) => (Number.isInteger(i) && i >= 0 && i < points.length ? i : 0);
-  return { width: TRACK_WIDTH, height: TRACK_HEIGHT, points, start: clampIndex(layout.start), finish: clampIndex(layout.finish ?? layout.start) };
+  const start = clampIndex(layout.start);
+  // The circuit exactly as the dashboard's live map draws it (components/track/live-track.tsx):
+  // straight lines through the points in driving order, from the timing line, closed. An app
+  // can put this straight into <path d="…"> and walk it with getPointAtLength().
+  const ordered = points.map((_, i) => points[(start + i) % points.length]);
+  let lengthPx = 0;
+  for (let i = 0; i < ordered.length; i++) {
+    const a = ordered[i];
+    const b = ordered[(i + 1) % ordered.length];
+    lengthPx += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  const path = ordered.map((pt, i) => `${i === 0 ? "M" : "L"} ${pt.x} ${pt.y}`).join(" ") + " Z";
+  return {
+    width: TRACK_WIDTH, height: TRACK_HEIGHT, points, start, finish: clampIndex(layout.finish ?? layout.start),
+    path, lengthPx: Math.round(lengthPx * 10) / 10,
+    // false: nobody has saved a drawing yet and this is the built-in placeholder shape.
+    drawn, savedAt: drawn && layout.savedAt ? Date.parse(layout.savedAt) || null : null,
+  };
 }
 
 /**
@@ -200,7 +220,8 @@ export function diffUpdates(prefix, desired, pushed) {
 
 // ------------------------------------------------------------------------------ garage
 
-const FUEL_DEFAULTS = { capacityL: 500, juniorLph: 2.4, gtLph: 10, reserveL: 75, juniorKartNumbers: [] };
+// The dashboard's defaults (lib/fuel-store.ts DEFAULT_FUEL_SETTINGS), for a desk with no settings yet.
+const FUEL_DEFAULTS = { capacityL: 500, juniorLph: 2.4, gtLph: 10, juniorKarts: 4, gtKarts: 8, sessionMinutes: 8, reserveL: 75, juniorKartNumbers: [] };
 
 /**
  * The Garage for the app: the fuel of the day (the morning reading, then every race and every
@@ -215,12 +236,21 @@ export function garageDoc({ fuelFile, garageFile, races, stints, now = new Date(
   const fuel = dayFuel(races || [], stints || [], settings, day);
   const reading = ((fuelFile && fuelFile.days) || []).find((d) => d && d.date === day) || null;
   const { stockL, burnedL } = liveFuelStock(reading, fuel);
+  const estimate = fuelEstimate(stockL, settings);
+  const r2 = (v) => Math.round(v * 100) / 100;
   const fuelToday = {
     day,
     readingL: reading ? reading.openingL : null, refillL: reading ? reading.refillL || 0 : 0,
     measuredAt: reading && reading.measuredAt ? Date.parse(reading.measuredAt) : null,
     stockL: reading ? stockL : null, burnedSinceReadingL: burnedL,
     capacityL: settings.capacityL, reserveL: settings.reserveL, low: reading ? stockL <= settings.reserveL : false,
+    // The barrel drawing's level, 0-100 (null before the morning reading), and the "Autonomie":
+    // hours and standard sessions the stock lasts with the whole fleet on track.
+    levelPct: reading ? Math.round(estimate.level * 100) : null,
+    hoursLeft: reading ? r2(estimate.hoursLeft) : null,
+    sessionsLeft: reading ? estimate.sessionsLeft : null,
+    sessionMinutes: settings.sessionMinutes, fleetLph: r2(estimate.fleetLph),
+    fleet: { junior: settings.juniorKarts, gt: settings.gtKarts },
     racesL: fuel.racesL, freeRunsL: fuel.freeL, totalL: fuel.totalL,
     races: fuel.races.map((r) => ({ raceId: r.raceId, name: r.name, at: r.at, minutes: r.minutes, juniorKarts: r.juniorKarts, gtKarts: r.gtKarts, litres: r.litres })),
     runs: fuel.runs.map((r) => ({ kart: r.kart, transponder: r.transponder, start: r.start, end: r.end, passes: r.passes, minutes: r.minutes, litres: r.litres })),

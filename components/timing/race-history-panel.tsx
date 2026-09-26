@@ -5,7 +5,7 @@
 // It sits directly under the race deck because that is where the operator is standing when they
 // press « Session suivante »: the race they just ran leaves the deck at that moment, and this is
 // where they turn to find it again. Newest first, one line each, and the laps only when asked.
-import { AlertTriangle, ChevronDown, ChevronRight, History, Trophy } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, History, Printer, Trophy } from "lucide-react";
 import { Fragment, useState } from "react";
 
 /** How many races the panel lists before asking. */
@@ -17,6 +17,10 @@ import type { RaceHistoryView } from "@/hooks/use-race-history";
 import type { TimingSavedRace } from "@/lib/timing-client";
 import { showResultOnBigScreen } from "@/lib/screen-channel";
 import { souvenirFromSavedRace } from "@/lib/saved-race-souvenir";
+import { printTimings } from "@/components/timing/print-timings";
+import { useTrackRecord } from "@/hooks/use-track-record";
+import { DayReportButton } from "@/components/reports/day-report-button";
+import type { TrackRecord } from "@/lib/track-record";
 
 export function RaceHistoryPanel({ history }: { history: RaceHistoryView }) {
   // One race open at a time: an evening holds a dozen results and every one of them unfolds into
@@ -24,6 +28,8 @@ export function RaceHistoryPanel({ history }: { history: RaceHistoryView }) {
   const [openId, setOpenId] = useState<string | null>(null);
   // Enough to cover a busy evening without turning the Sessions page into a scroll.
   const [shown, setShown] = useState(PAGE);
+  // Printed on each driver's sheet as the time to chase.
+  const { record } = useTrackRecord();
 
   const toggle = (raceId: string) => {
     const next = openId === raceId ? null : raceId;
@@ -36,7 +42,11 @@ export function RaceHistoryPanel({ history }: { history: RaceHistoryView }) {
       <div className="panel-header">
         <div><span className="panel-kicker">CHRONO MEGAKART</span><h2>Courses terminées</h2></div>
         {history.online && history.loaded && history.races.length > 0 ? (
-          <small style={{ color: "#8aa0b6" }}>{history.races.length} enregistrée{history.races.length > 1 ? "s" : ""}</small>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {/* Every race of a day, pilots and times, against that day's payments - as a PDF. */}
+            <DayReportButton races={history.races} />
+            <small style={{ color: "#8aa0b6" }}>{history.races.length} enregistrée{history.races.length > 1 ? "s" : ""}</small>
+          </span>
         ) : null}
       </div>
 
@@ -81,7 +91,7 @@ export function RaceHistoryPanel({ history }: { history: RaceHistoryView }) {
                   </span>
                   <span>{pilotLabel(r.racers)}</span>
                 </button>
-                {open ? <div className="race-history-detail"><RaceDetail summary={r} state={history.details[r.raceId]} /></div> : null}
+                {open ? <div className="race-history-detail"><RaceDetail summary={r} state={history.details[r.raceId]} record={record} /></div> : null}
               </Fragment>
             );
           })}
@@ -99,7 +109,8 @@ export function RaceHistoryPanel({ history }: { history: RaceHistoryView }) {
   );
 }
 
-function RaceDetail({ summary, state }: { summary: RaceSummary; state: RaceHistoryView["details"][string] | undefined }) {
+function RaceDetail({ summary, state, record }: { summary: RaceSummary; state: RaceHistoryView["details"][string] | undefined; record: TrackRecord }) {
+  const [blocked, setBlocked] = useState(false);
   if (!state || state.status === "loading") return <span className="race-history-note">Chargement du détail…</span>;
   if (state.status === "error") {
     return <span className="race-history-note" style={{ color: "#ff6b69" }}>{state.message}</span>;
@@ -107,6 +118,8 @@ function RaceDetail({ summary, state }: { summary: RaceSummary; state: RaceHisto
 
   const race = state.race;
   const rows = classification(race.racers);
+  // Black-and-white sheets for the clients: one driver, or every driver of the race (one page each).
+  const print = (drivers: TimingSavedRace["racers"]) => setBlocked(!printTimings(race, drivers, { record }));
   const fastest = bestLap(race.racers);
   if (rows.length === 0) {
     return <span className="race-history-note">Aucun pilote enregistré pour cette course.</span>;
@@ -124,10 +137,21 @@ function RaceDetail({ summary, state }: { summary: RaceSummary; state: RaceHisto
       ) : null}
       {/* Bring this race's podium back on the TV, with its QR souvenir - after the next race has
           started, or after the chrono was closed and reopened. The TV must be open on this PC. */}
-      <button type="button" className="secondary-button" style={{ margin: "4px 0 10px" }}
-        onClick={() => showResultOnBigScreen(souvenirFromSavedRace(race))}>
-        <Trophy size={14} /> Podium sur l’écran TV
-      </button>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 10px" }}>
+        <button type="button" className="secondary-button"
+          onClick={() => showResultOnBigScreen(souvenirFromSavedRace(race))}>
+          <Trophy size={14} /> Podium sur l’écran TV
+        </button>
+        <button type="button" className="secondary-button" onClick={() => print(rows)}
+          title="Une page par pilote, en noir et blanc">
+          <Printer size={14} /> Imprimer les temps · {pilotLabel(rows.length)}
+        </button>
+      </div>
+      {blocked ? (
+        <p className="race-history-note" style={{ color: "#ff6b69" }}>
+          Le navigateur a bloqué la fenêtre d’impression : autorisez les fenêtres pop-up pour ce site, puis réessayez.
+        </p>
+      ) : null}
 
       <div className="race-history-grid race-history-grid--head">
         <span>POS</span><span>PILOTE</span><span>KART</span><span>TOURS</span><span>MEILLEUR</span>
@@ -141,6 +165,10 @@ function RaceDetail({ summary, state }: { summary: RaceSummary; state: RaceHisto
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <DriverAvatar pilot={race.kartMapping?.[d.transponder]?.color ?? null} seed={d.driver} size="24px" />
                 <span>{d.driver}</span>
+                <button type="button" className="race-print" onClick={() => print([d])}
+                  title={`Imprimer les temps de ${d.driver}`} aria-label={`Imprimer les temps de ${d.driver}`}>
+                  <Printer size={13} /> Imprimer
+                </button>
               </span>
               <span>{d.kart}</span>
               <strong>{d.laps ?? 0}</strong>

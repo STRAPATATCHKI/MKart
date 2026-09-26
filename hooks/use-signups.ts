@@ -30,9 +30,15 @@ export function useSignups(pollMs = 5000) {
       if (!stopped) setFormUrl(url);
     });
     const timer = window.setInterval(tick, pollMs);
+    // Back on the dashboard after it sat in the background: ask at once.
+    const onShow = () => { if (document.visibilityState === "visible") tick(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
     return () => {
       stopped = true;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("focus", onShow);
     };
   }, [pollMs, reload]);
 

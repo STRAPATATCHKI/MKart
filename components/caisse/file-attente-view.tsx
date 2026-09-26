@@ -11,13 +11,15 @@
 //   - a dead desk server must never look like an empty queue
 //   - nothing claims money was taken unless the server said so
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plus } from "lucide-react";
 import { useQueue, QUEUE_STATUS_LABELS, type Reservation, type QueueStatus } from "@/hooks/use-queue";
 import { useKartMap } from "@/hooks/use-kart-map";
 import { useTimingKarts } from "@/hooks/use-timing-karts";
 import { useSignups } from "@/hooks/use-signups";
 import { signupPlayers, type Signup } from "@/lib/bridge-client";
 import { PackPicker, type ClientChoice } from "@/components/caisse/pack-picker";
+import { ReplayDialog } from "@/components/caisse/replay-dialog";
 import { codesFrom, DELETE_PRESSES, findByCode, nextPress, PRESS_WINDOW_MS, type PressState } from "@/lib/queue-delete";
 
 const KART_COLOR_LABEL: Record<string, string> = { blue: "Bleu", black: "Noir", green: "Vert" };
@@ -53,6 +55,10 @@ export function FileAttenteView({ search }: { search: string }) {
     try { return localStorage.getItem("megakart-caisse-operateur-v1") || ""; } catch { return ""; }
   });
   const [openCode, setOpenCode] = useState<string | null>(null);
+  // "+ Rejouer": the pop-up, and the line confirming who went back in the queue.
+  const [replaying, setReplaying] = useState(false);
+  const [replayed, setReplayed] = useState<string | null>(null);
+  const clientCodeOf = useCallback((code: string) => signupByQueue.get(code)?.code ?? null, [signupByQueue]);
 
   const saveOperator = (v: string) => {
     setOperator(v);
@@ -77,6 +83,7 @@ export function FileAttenteView({ search }: { search: string }) {
         return (
           r.code.toLowerCase().includes(qq) ||
           (signupByQueue.get(r.code)?.code ?? "").toLowerCase().includes(qq) ||
+          (r.replayOf?.clientCode ?? "").toLowerCase().includes(qq) ||
           r.contactName.toLowerCase().includes(qq) ||
           r.pilots.some((p) => p.fullName.toLowerCase().includes(qq))
         );
@@ -127,6 +134,7 @@ export function FileAttenteView({ search }: { search: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "d" && e.key !== "D") return;
+      if (replaying) return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       const el = e.target as HTMLElement | null;
       if (el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName))) return;
@@ -144,6 +152,12 @@ export function FileAttenteView({ search }: { search: string }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  useEffect(() => {
+    if (!replayed) return;
+    const t = window.setTimeout(() => setReplayed(null), 7000);
+    return () => window.clearTimeout(t);
+  }, [replayed]);
 
   // The undo offer stays a few seconds, then the bin is the way back.
   useEffect(() => {
@@ -193,6 +207,10 @@ export function FileAttenteView({ search }: { search: string }) {
           ))}
         </div>
         <div className="fa-toolbar-right">
+          <button type="button" className="fa-replay-btn" onClick={() => setReplaying(true)}
+            title="Un client veut refaire une course : retrouvez-le par son nom et remettez-le en attente">
+            <Plus size={16} strokeWidth={3} /> Rejouer
+          </button>
           <form className="fa-delcode" onSubmit={submitCodes}
             title="Code de la réservation (MK-6149 ou 6149) ou code client (AZSM). Plusieurs codes : séparez-les par un espace. Astuce : survolez une ligne et tapez D cinq fois.">
             <input type="text" value={codeInput} placeholder="Code à supprimer" aria-label="Code à supprimer"
@@ -245,6 +263,30 @@ export function FileAttenteView({ search }: { search: string }) {
               onErase={() => void q.erase(r.code)}
             />
           ))}
+        </div>
+      )}
+
+      {replaying && (
+        <ReplayDialog
+          reservations={q.reservations}
+          clientCodeOf={clientCodeOf}
+          packOf={(r) => packView(r, signupByQueue.get(r.code))?.label ?? null}
+          by={by}
+          onReplay={q.replay}
+          onClose={() => setReplaying(false)}
+          onDone={(created) => {
+            setReplaying(false);
+            setFilter("EN_ATTENTE");
+            setOpenCode(null);
+            setReplayed(`${created.code} · ${created.contactName} · ${created.pilots.length} pilote${created.pilots.length > 1 ? "s" : ""} remis en attente`);
+          }}
+        />
+      )}
+
+      {replayed && !undo && (
+        <div className="fa-toast" role="status">
+          <span>{replayed}</span>
+          <button type="button" onClick={() => setReplayed(null)}>OK</button>
         </div>
       )}
 
@@ -390,7 +432,11 @@ function Row({ r, karts, pack, clientCode, clientChoice, onSetPack, open, onTogg
           ) : (
             <>
               <strong>{r.code}</strong>
-              <span>{deleted ? `supprimée ${hhmm(r.deletedAt)}` : r.channel === "guichet" ? "guichet" : `il y a ${waitedMin} min`}</span>
+              <span>
+                {deleted ? `supprimée ${hhmm(r.deletedAt)}`
+                  : r.replayOf ? `re-course · ${r.replayOf.clientCode ?? r.replayOf.code} · il y a ${waitedMin} min`
+                  : r.channel === "guichet" ? "guichet" : `il y a ${waitedMin} min`}
+              </span>
             </>
           )}
         </div>

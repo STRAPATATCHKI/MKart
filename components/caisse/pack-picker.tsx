@@ -18,14 +18,16 @@ function whyNot(o: Offer, pilots: number): string {
   return `Non prévu pour ${pilots} pilotes`;
 }
 
-export function PackPicker({ pilots, currentId, clientChoice, corrected, busy, onPick, onClose }: {
+export function PackPicker({ pilots, currentId, clientChoice, corrected, busy, onPick, onClose, title }: {
   pilots: number;
   currentId: string | null;
   clientChoice: ClientChoice;
   corrected: boolean;
   busy: boolean;
   onPick: (offerId: string | null) => void;
-  onClose: () => void;
+  /** No close button when the picker is part of something else (the "Rejouer" pop-up). */
+  onClose?: () => void;
+  title?: string;
 }) {
   const { catalog } = useCatalog();
   const rank = (o: Offer) => KIND_ORDER.indexOf(o.kind);
@@ -52,7 +54,7 @@ export function PackPicker({ pilots, currentId, clientChoice, corrected, busy, o
 
   return (
     <div className="fa-detail fa-packpick" onClick={(e) => e.stopPropagation()}>
-      <h4>Changer la formule · {pilots} pilote{pilots > 1 ? "s" : ""}</h4>
+      <h4>{title ?? "Changer la formule"} · {pilots} pilote{pilots > 1 ? "s" : ""}</h4>
       {clientChoice && (
         <p className="fa-hint">
           Choix du client sur le téléphone : <b>{clientChoice.label}</b>
@@ -67,14 +69,16 @@ export function PackPicker({ pilots, currentId, clientChoice, corrected, busy, o
           <div className="fa-packs">{others.map((o) => option(o, false))}</div>
         </>
       )}
-      <div className="fa-packpick-foot">
-        {corrected && (
-          <button type="button" className="fa-undo" disabled={busy} onClick={() => onPick(null)}>
-            {clientChoice ? `Revenir au choix du client (${clientChoice.label})` : "Retirer la formule"}
-          </button>
-        )}
-        <button type="button" className="fa-undo" onClick={onClose}>Fermer</button>
-      </div>
+      {(corrected || onClose) && (
+        <div className="fa-packpick-foot">
+          {corrected && (
+            <button type="button" className="fa-undo" disabled={busy} onClick={() => onPick(null)}>
+              {clientChoice ? `Revenir au choix du client (${clientChoice.label})` : "Retirer la formule"}
+            </button>
+          )}
+          {onClose && <button type="button" className="fa-undo" onClick={onClose}>Fermer</button>}
+        </div>
+      )}
     </div>
   );
 }

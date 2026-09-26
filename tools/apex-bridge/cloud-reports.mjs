@@ -22,7 +22,9 @@ import { fuelDayKey } from "../../lib/fuel-rules.mjs";
 const DESK_EVERY_MS = 30_000;
 const LIVE_EVERY_MS = 2_000;
 const IDLE_LIVE_EVERY = 5;          // while nothing runs, look at the chrono every 5th tick (10 s)
-const HEARTBEAT_MS = 5 * 60_000;
+// Proof of life for the app: /reports/meta is rewritten at least this often, even on a quiet
+// night with nothing to send, so "PC en ligne" never depends on someone paying.
+const HEARTBEAT_MS = 60_000;
 const CHUNK = 400;                  // paths per update request
 
 async function getJson(url, timeoutMs = 5000) {

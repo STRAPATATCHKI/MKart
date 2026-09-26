@@ -197,3 +197,10 @@
   background: transparent; color: #8aa0b6; font: inherit; font-size: 12px; cursor: pointer; }
 .race-history-more:hover { border-color: #35435a; color: #cfd8e2; }
 .race-history-more small { opacity: .7; }
+
+/* Print one driver's timings (black and white sheet): discreet until the row is pointed at. */
+.race-print { display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; padding: 3px 8px; border: 1px solid #2a3440; border-radius: 6px;
+  background: transparent; color: #8aa0b6; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; opacity: .55; }
+.race-history-driver:hover .race-print, .race-print:focus-visible { opacity: 1; }
+.race-print:hover { border-color: #d8ff35; color: #d8ff35; }
+@media (hover: none) { .race-print { opacity: 1; } }

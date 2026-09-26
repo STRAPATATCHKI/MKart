@@ -26,7 +26,7 @@ mobile app bundle.
 | | |
 |---|---|
 | Money | whole dirhams (DH) |
-| Times | milliseconds since 1970, venue PC clock |
+| Times | milliseconds since 1970, venue PC clock. Show them in the venue's time zone, **`Africa/Casablanca`** (not the server's or the phone's) |
 | `day` | the venue's local calendar day, `YYYY-MM-DD` |
 | Missing | the field is absent or `null` |
 
@@ -37,8 +37,8 @@ unreachable, retry).
 
 | GET | returns |
 |---|---|
-| `/v1/health` | `{ ok, venue, dataUpdatedAt }` — no key. `dataUpdatedAt` older than ~5 min means the venue PC is off |
-| `/v1/today` | the day at a glance: `day, total, cash, card, payments, pilotsPaid, waiting, pilotsWaiting, estimated, unknown, updatedAt` |
+| `/v1/health` | `{ ok, venue, dataUpdatedAt, pcOnline, pcAgeSeconds, timeZone }` — no key. **`pcOnline`** says whether the venue PC is sending (its heartbeat arrives every minute; online while under 6 min old) |
+| `/v1/today` | the day at a glance: `day, total, cash, card, payments, pilotsPaid, waiting, pilotsWaiting, estimated, unknown, updatedAt`, plus `pcOnline`, `pcSeenAt`, `pcAgeSeconds`, `timeZone`. `updatedAt` is when the **figures** last changed (still for hours on a quiet night): to show whether the PC is on, use `pcOnline` |
 | `/v1/days?from=&to=` | revenue per day, oldest first; without dates, the last 31 days with sales |
 | `/v1/payments?day=` or `?from=&to=` | payments, newest first (default: today) |
 | `/v1/reservations?day=` or `?from=&to=` | reservations of the last 30 days, newest first (default: today) |
@@ -47,10 +47,35 @@ unreachable, retry).
 | `/v1/live` | the race on track now (see below) |
 | `/v1/live/stream` | the same, pushed as Server-Sent Events (`event: live`) whenever it changes |
 | `/v1/track` | the circuit drawing |
-| `/v1/garage` | fuel and spare parts: `fuel.today` (reading, stock left, burned by races and by karts going round outside a race, each race and run), `fuel.days`, `parts` (stock, to reorder, last 100 movements) |
+| `/v1/reports/day.pdf?day=` | **the day report as a PDF file to download** (default: today): every race of the day with its pilots and laps, set against the day's payments — see below |
+| `/v1/reports/day?day=` | the same report as JSON, for an app that draws it itself |
+| `/v1/reports/day.html?day=` | the same report as a printable page |
+| `/v1/garage` | fuel and spare parts: `fuel.today` (reading, stock left, barrel level `levelPct`, autonomy `hoursLeft`/`sessionsLeft`, burned by races and by karts going round outside a race, each race and run), `fuel.days`, `parts` (stock, to reorder, last 100 movements) |
 
 Field-by-field descriptions of payments, days, reservations and races are in
 `docs/firebase-reports.md` — the API returns those documents unchanged, as arrays.
+
+## The day report (races against payments)
+
+`GET /v1/reports/day.pdf?day=2026-09-26` answers `application/pdf` with
+`Content-Disposition: attachment; filename="MegaKart-rapport-2026-09-26.pdf"` — A4, black and
+red, the same report the venue prints from Sessions → Courses terminées → « Rapport du jour ».
+Without `day`, today at the venue. The key is required, as for everything else: have your
+backend fetch it and hand the file to the app (never put the key in the app).
+
+`GET /v1/reports/day?day=…` returns the report itself:
+
+| field | meaning |
+|---|---|
+| `totals` | `races`, `tests` (races named TEST, set apart), `driverRaces` (times a pilot went on track), `pilots`, `covered` (paid), `extra` (raced more times than paid for), `booked` (booked, never cashed), `check` (first name only or a close name: check by hand), `none` (nobody of that name paid), `revenue` (DH cashed that day), `racePrice` and `missingDh` (uncovered × one race's price), `underpaid` / `underpaidDh` (payments under their pack's price) |
+| `uncovered[]` | every time on track that no payment covers: `raceName`, `at`, `driver`, `kart`, `laps`, `bestLapMs`, `coverage` (`extra`, `booked`, `check`, `none`), `reservation`, `suggestions[]` |
+| `payments[]` | each payment of the day: `code`, `clientCode`, `paidAt`, `amount`, `method`, `pack`, `packPrice`, `perPilot` (races per pilot), `allowanceFrom`, `pilots[]` (`name`, `races` done), `racesCovered`, `racesExtra` |
+| `paidNoRace[]` | paid that day, but none of its pilots raced |
+| `races[]` | every race in time order: `raceId`, `name`, `startedAt`, `finishedAt`, `test`, `entries[]` (`position` by best lap, `driver`, `kart`, `laps`, `bestLapMs`, `lapTimesMs[]`, `coverage`, `reservation`) |
+
+Pilots are matched to payments by name, ignoring accents, case and small typing slips; a pack
+bought on another day is not counted, and reservations are kept 30 days (older days show races
+only).
 
 ## Following a race live
 
@@ -83,19 +108,27 @@ Prefer `/v1/live/stream` (one connection, pushed on change) over polling; if you
 `/v1/track`:
 
 ```json
-{ "width": 704, "height": 268, "points": [{ "x": 91.8, "y": 191 }, …], "start": 13, "finish": 13 }
+{ "width": 704, "height": 268, "points": [{ "x": 91.8, "y": 191 }, …], "start": 13, "finish": 13,
+  "path": "M 408 201 L 354 178 … Z", "lengthPx": 1564.2, "drawn": true, "savedAt": 1790280000000 }
 ```
 
 `points` is a closed loop in a 704 × 268 box, in driving order; `start` is the index of the
-point where the timing line is. The venue PC only knows when a kart crosses the line, so
-between crossings the position is estimated, exactly as the MegaKart dashboard does:
+point where the timing line is. `path` is the same circuit ready to draw: put it in an SVG
+`<path d="…">` inside `viewBox="0 0 704 268"` and it is exactly the dashboard's line — straight
+segments, starting at the timing line, closed. `drawn: false` means nobody has saved the real
+circuit yet and this is a placeholder shape. **`docs/track-reference.html`** is a self-contained
+page that draws the circuit the way the dashboard does (colours, widths, the start/finish line,
+the karts) and animates karts with the steps below: open it in a browser, copy what you need.
+
+The venue PC only knows when a kart crosses the line, so between crossings the position is
+estimated, exactly as the MegaKart dashboard does:
 
 1. Clock offset, once per update: `offset = Date.now() - live.updatedAt` (your clock minus the venue's).
 2. For each driver: `pace = lastLapMs ?? average of the others' lastLapMs ?? 35000`.
 3. `fraction = min((Date.now() - offset - lastPassingAt) / pace, 0.97)` — never past the line
    before the real crossing arrives; the next update snaps the kart back to the line.
 4. Walk the loop from `points[start]`, following the order of `points`, for `fraction` of its
-   total length; that is where the kart is.
+   total length; that is where the kart is. With the SVG path: `path.getPointAtLength(fraction * lengthPx)`.
 5. Before the start (`lastPassingAt` null), line karts up behind the line in `grid` order.
 
 ## Where it runs

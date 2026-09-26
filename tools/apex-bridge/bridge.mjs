@@ -413,6 +413,8 @@ async function sendSignupToDesk(entry) {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": entry.id },
       body: JSON.stringify({ ...base, channel }),
+      // A desk that hangs must not hold the sign-up: it counts as unreachable and is retried.
+      signal: AbortSignal.timeout(10_000),
     });
   try {
     // "enligne" is the truthful channel; it demands a Moroccan number, so a foreign or odd one
@@ -436,8 +438,23 @@ async function sendSignupToDesk(entry) {
 // Wi-Fi sign-up arrives, and hands them to the desk. From then on they are ordinary sign-ups.
 //
 // Needs the service-account key (cloud.mjs); without it this is a no-op and says so once.
-const CLOUD_SYNC_MS = 20_000;
+//
+// How often: every 3 s the bridge asks Firebase for the sign-ups not yet imported (status "new",
+// indexed), which is nearly always an empty answer - so a client who signs up online is in the
+// queue within seconds, for next to no traffic. Until Firebase has that index it falls back to
+// reading the last 100 sign-ups every 20 s, as before. One read at a time; when Firebase or the
+// network fails it waits longer between tries (up to a minute) and says so once, not every time.
+const CLOUD_FAST_MS = 3_000;
+const CLOUD_SLOW_MS = 20_000;
+const CLOUD_MAX_WAIT_MS = 60_000;
+const NEW_SIGNUPS = 'signups.json?orderBy="status"&equalTo="new"&limitToFirst=50';
+const LAST_SIGNUPS = 'signups.json?orderBy="createdAt"&limitToLast=100';
 let cloudSyncWarned = false;
+let statusIndexed = true;   // false while Firebase says signups has no index on status
+let indexMissingAt = 0;     // then the fast read is tried again every 5 minutes
+let cloudFailures = 0;
+let cloudSyncing = null;
+const remarkedAt = new Map(); // id -> when "imported" was last re-sent for it
 
 function cloudToLocal(id, c) {
   const created = typeof c.createdAt === "number" ? new Date(c.createdAt) : new Date();
@@ -467,6 +484,14 @@ function cloudToLocal(id, c) {
 }
 
 async function syncCloudSignups() {
+  // One read at a time: two overlapping reads could import the same sign-up twice.
+  if (cloudSyncing) return cloudSyncing;
+  cloudSyncing = pullCloudSignups().finally(() => { cloudSyncing = null; });
+  return cloudSyncing;
+}
+
+/** Reads the sign-ups waiting online and imports them. Throws when Firebase cannot be read. */
+async function pullCloudSignups() {
   if (!cloudConfigured()) {
     if (!cloudSyncWarned) {
       cloudSyncWarned = true;
@@ -474,19 +499,37 @@ async function syncCloudSignups() {
     }
     return;
   }
+  if (!statusIndexed && Date.now() - indexMissingAt > 5 * 60_000) statusIndexed = true;
   let cloud;
   try {
-    cloud = await cloudGet('signups.json?orderBy="createdAt"&limitToLast=100');
+    cloud = await cloudGet(statusIndexed ? NEW_SIGNUPS : LAST_SIGNUPS);
+    if (statusIndexed && indexMissingAt) {
+      indexMissingAt = 0;
+      console.log("[cloud] index on status found: sign-ups checked every 3 s");
+    }
   } catch (e) {
-    console.log(`[cloud] read failed: ${e.message}`);
-    return;
+    if (!statusIndexed || !/index not defined/i.test(e.message)) throw e;
+    if (!indexMissingAt) console.log("[cloud] signups has no index on status yet: reading the last 100 sign-ups every 20 s instead");
+    statusIndexed = false;
+    indexMissingAt = Date.now();
+    cloud = await cloudGet(LAST_SIGNUPS);
   }
   if (!cloud || typeof cloud !== "object") return;
   const list = readSignups();
   const known = new Set(list.map((s) => s.id));
   let imported = 0;
   for (const [id, c] of Object.entries(cloud)) {
-    if (!c || known.has(id) || c.status !== "new") continue;
+    if (!c || c.status !== "new") continue;
+    if (known.has(id)) {
+      // Imported here, but marking it online failed: mark it again (once a minute at most), or
+      // it would come back in every read.
+      const last = remarkedAt.get(id) ?? 0;
+      if (Date.now() - last > 60_000) {
+        remarkedAt.set(id, Date.now());
+        cloudPatch(`signups/${id}`, { status: "imported", importedBy: os.hostname(), importedAt: Date.now() }).catch(() => {});
+      }
+      continue;
+    }
     // A sign-up older than a day is not a client at the counter, it is a test or a no-show.
     // Marked stale in the cloud rather than skipped, so it is never re-examined - and never
     // dropped into the queue on some later restart.
@@ -508,14 +551,56 @@ async function syncCloudSignups() {
     writeSignups(list);
     console.log(`[cloud] imported ${imported} online sign-up${imported > 1 ? "s" : ""} -> caisse`);
   }
+  if (remarkedAt.size > 500) remarkedAt.clear();
 }
 const CLOUD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-setInterval(() => { syncCloudSignups().catch((e) => console.log(`[cloud] sync error: ${e.message}`)); }, CLOUD_SYNC_MS);
+
+function scheduleCloudSync(wait) {
+  setTimeout(async () => {
+    let next;
+    try {
+      await syncCloudSignups();
+      if (cloudFailures) console.log(`[cloud] sign-ups: Firebase répond de nouveau (après ${cloudFailures} échec${cloudFailures > 1 ? "s" : ""})`);
+      cloudFailures = 0;
+      next = cloudConfigured() && statusIndexed ? CLOUD_FAST_MS : CLOUD_SLOW_MS;
+    } catch (e) {
+      cloudFailures += 1;
+      if (cloudFailures === 1 || cloudFailures % 30 === 0) console.log(`[cloud] read failed (${cloudFailures}x): ${e.message}`);
+      next = Math.min(CLOUD_MAX_WAIT_MS, CLOUD_FAST_MS * 2 ** Math.min(cloudFailures, 5));
+    }
+    scheduleCloudSync(next);
+  }, wait);
+}
 
 // Revenue and races for the manager's app: payments, day totals, reservations, every saved race
 // and the race on track, pushed to /reports (cloud-reports.mjs). Readable only by /staff accounts.
 startReportSync({ deskUrl: DESK_URL, readSignups, stateFile: path.join(OUT_DIR, "cloud-reports.json") });
-setTimeout(() => { syncCloudSignups().catch(() => {}); }, 3_000);
+scheduleCloudSync(3_000);
+
+// A sign-up that reached this PC while the desk was down (restarting, say) was saved but never
+// queued. Try again every 15 s while the desk is unreachable, for sign-ups of the last 6 hours
+// that are still new; a refusal from the desk itself (a bad name, say) is not retried.
+const DESK_RETRY_MS = 15_000;
+const DESK_RETRY_WINDOW_MS = 6 * 60 * 60 * 1000;
+const deskDown = (error) => /^borne (injoignable|5\d\d)/.test(String(error || ""));
+let deskRetrying = false;
+async function retryDeskHandOffs() {
+  if (deskRetrying) return;
+  deskRetrying = true;
+  try {
+    const cutoff = Date.now() - DESK_RETRY_WINDOW_MS;
+    const pending = readSignups().filter((s) => s && !s.queueCode && deskDown(s.queueError)
+      && s.status === "new" && Date.parse(s.createdAt) >= cutoff);
+    for (const entry of pending) {
+      const result = await sendSignupToDesk(entry);
+      if (!result.code && deskDown(result.error)) break;   // still down: next time
+      recordQueueCode(entry.id, result);
+    }
+  } finally {
+    deskRetrying = false;
+  }
+}
+setInterval(() => { retryDeskHandOffs().catch((e) => console.log(`[signup] retry error: ${e.message}`)); }, DESK_RETRY_MS);
 
 function recordQueueCode(id, result) {
   const list = readSignups();

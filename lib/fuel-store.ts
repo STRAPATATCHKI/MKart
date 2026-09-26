@@ -68,7 +68,6 @@ function migrateSettings(stored: Partial<FuelSettings>): FuelSettings {
 export const todayKey = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 export function readFuel(): FuelState {
   try {
@@ -151,22 +150,8 @@ export type FuelEstimate = {
   low: boolean; // at or under the reserve
 };
 
-export function estimateFuel(stockL: number, settings: FuelSettings): FuelEstimate {
-  const hours = settings.sessionMinutes / 60;
-  const fleetLph = settings.juniorKarts * settings.juniorLph + settings.gtKarts * settings.gtLph;
-  const fleetPerSessionL = fleetLph * hours;
-  return {
-    stockL,
-    level: settings.capacityL > 0 ? clamp(stockL / settings.capacityL, 0, 1) : 0,
-    fleetLph,
-    juniorPerSessionL: settings.juniorLph * hours,
-    gtPerSessionL: settings.gtLph * hours,
-    fleetPerSessionL,
-    hoursLeft: fleetLph > 0 ? stockL / fleetLph : 0,
-    sessionsLeft: fleetPerSessionL > 0 ? Math.floor(stockL / fleetPerSessionL) : 0,
-    low: stockL <= settings.reserveL,
-  };
-}
+// Shared with the bridge (lib/fuel-rules.mjs), so the app's barrel and autonomy match this page.
+export const estimateFuel = (stockL: number, settings: FuelSettings): FuelEstimate => rules.fuelEstimate(stockL, settings);
 
 /**
  * What a day actually burned, read from two readings: yesterday's opening plus what was poured
