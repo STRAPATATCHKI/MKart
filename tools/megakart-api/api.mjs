@@ -13,7 +13,8 @@
 // Endpoints: docs/megakart-api.md.
 
 import crypto from "node:crypto";
-import { cloudConfigured, cloudGet } from "../apex-bridge/cloud.mjs";
+import { cloudConfigured, cloudGet, cloudPut } from "../apex-bridge/cloud.mjs";
+import { checkDecision } from "../../lib/disbursement-rules.mjs";
 import { buildDayReport, inputFromReports } from "../../lib/day-report-rules.mjs";
 import { dayReportHtml } from "../../lib/day-report-html.mjs";
 import { dayReportPdf } from "../../lib/day-report-pdf.mjs";
@@ -78,6 +79,37 @@ async function dayReport(day) {
   return buildDayReport({ day, ...input, offers: Array.isArray(catalog?.offers) ? catalog.offers : [] });
 }
 
+/** A small JSON body (the app's decision). */
+function readJson(req, max = 8 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > max) { reject(badRequest("Corps trop volumineux.")); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "null")); }
+      catch { reject(badRequest("JSON invalide.")); }
+    });
+    req.on("error", reject);
+  });
+}
+
+/** Every décaissement, newest first (they are few: read whole, filtered here). */
+async function allDisbursements() {
+  return values(await read("disbursements.json")).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+/** One décaissement, by its id or its code (DC-0007). */
+async function oneDisbursement(key) {
+  if (!ID.test(key)) throw badRequest("Identifiant invalide.");
+  const byId = await read(`disbursements/${key}.json`);
+  if (byId) return byId;
+  return (await allDisbursements()).find((d) => d.code === key) ?? null;
+}
+
 async function byDay(node, url) {
   const [from, to] = await range(url);
   return values(await read(`${node}.json?orderBy="day"&startAt="${from}"&endAt="${to}"`));
@@ -132,7 +164,9 @@ export function createApiHandler({ apiKey, log = console.log }) {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     if (path !== "/health" && path !== "/v1" && !path.startsWith("/v1/")) return false;
     try {
-      if (req.method !== "GET") { send(res, 405, { error: "Lecture seule." }); return true; }
+      // Read-only, but for one thing: the app's answer to a décaissement.
+      const deciding = path.match(/^\/v1\/disbursements\/([^/]+)\/decision$/);
+      if (req.method !== "GET" && !(req.method === "POST" && deciding)) { send(res, 405, { error: "Lecture seule." }); return true; }
 
       if (path === "/health" || path === "/v1" || path === "/v1/health") {
         if (!configured) { send(res, 503, { ok: false, error: key.length < 24 ? "MEGAKART_API_KEY manquante." : "Clé Firebase introuvable : variable FIREBASE_SERVICE_ACCOUNT." }); return true; }
@@ -198,6 +232,64 @@ export function createApiHandler({ apiKey, log = console.log }) {
         } else {
           send(res, 200, doc);
         }
+        return true;
+      }
+      // ---- décaissements: the list, one with its history, and the decision
+      if (path === "/v1/disbursements") {
+        const status = url.searchParams.get("status");
+        const day = url.searchParams.get("day");
+        if (day && !DAY.test(day)) throw badRequest("day : AAAA-MM-JJ");
+        let list = await allDisbursements();
+        if (status) list = list.filter((d) => d.status === status.toUpperCase());
+        if (day) list = list.filter((d) => d.day === day);
+        send(res, 200, list);
+        return true;
+      }
+      if (deciding) {
+        const checked = checkDecision(await readJson(req));
+        if (checked.error) throw badRequest(checked.error);
+        const doc = await oneDisbursement(decodeURIComponent(deciding[1]));
+        if (!doc) { send(res, 404, { error: "Décaissement introuvable." }); return true; }
+        if (doc.status !== "EN_ATTENTE") { send(res, 409, { error: `Déjà traité : ${doc.statusLabel ?? doc.status}.`, disbursement: doc }); return true; }
+        if (await cloudGet(`decisions/disbursements/${doc.id}.json`)) {
+          send(res, 409, { error: "Une décision est déjà en route vers le PC de la piste.", disbursement: doc });
+          return true;
+        }
+        // Carried to the venue PC by its bridge, which applies it at the desk (within ~5 s when
+        // the PC is on) and sends the request back with its new status and history.
+        await cloudPut(`decisions/disbursements/${doc.id}`, { ...checked.value, decidedAt: Date.now(), via: "api" });
+        const pc = await pcStatus();
+        send(res, 202, {
+          status: "ENVOYEE", id: doc.id, code: doc.code, decision: checked.value.decision, pcOnline: pc.pcOnline,
+          message: pc.pcOnline
+            ? "Décision transmise : elle est appliquée à l'accueil dans les secondes qui suivent."
+            : "Décision enregistrée : elle sera appliquée dès que le PC de la piste sera allumé.",
+        });
+        return true;
+      }
+      // A photo joined to a décaissement (ticket, invoice), as the image itself.
+      const photo = path.match(/^\/v1\/disbursements\/([^/]+)\/attachments\/([^/]+)$/);
+      if (photo) {
+        const doc = await oneDisbursement(decodeURIComponent(photo[1]));
+        const attId = decodeURIComponent(photo[2]);
+        if (!doc || !ID.test(attId) || !(doc.attachments || []).some((a) => a.id === attId)) {
+          send(res, 404, { error: "Photo introuvable." });
+          return true;
+        }
+        const stored = await cloudGet(`attachments/disbursements/${doc.id}/${attId}.json`);
+        if (!stored || typeof stored.data !== "string") {
+          send(res, 404, { error: "Photo pas encore envoyée par le PC de la piste : réessayez dans une minute." });
+          return true;
+        }
+        const bytes = Buffer.from(stored.data, "base64");
+        res.writeHead(200, { "Content-Type": stored.type || "image/jpeg", "Content-Length": bytes.length, "Cache-Control": "private, max-age=86400" });
+        res.end(bytes);
+        return true;
+      }
+      const oneDisb = path.match(/^\/v1\/disbursements\/([^/]+)$/);
+      if (oneDisb) {
+        const doc = await oneDisbursement(decodeURIComponent(oneDisb[1]));
+        if (doc) send(res, 200, doc); else send(res, 404, { error: "Décaissement introuvable." });
         return true;
       }
       const race = path.match(/^\/v1\/races\/([^/]+)$/);

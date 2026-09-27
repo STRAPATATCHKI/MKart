@@ -8,6 +8,7 @@ import { qrSvgMarkup } from "@/lib/qr-svg";
 import { isTallEnough, kartCategory, signupPlayers, MIN_HEIGHT_CM, PUBLIC_SIGNUP_URL, type Signup } from "@/lib/bridge-client";
 import { DriverAvatar } from "@/components/big-screen/driver-avatar";
 import { useQueue } from "@/hooks/use-queue";
+import type { QueuedGroup } from "@/lib/session-queue";
 
 const printPoster = (url: string) => {
   const win = window.open("", "megakart-affiche", "width=820,height=1100");
@@ -41,11 +42,17 @@ type SignupPanelProps = {
   state: "loading" | "ready" | "offline";
   onAdd: (signup: Signup) => void;
   onArchive: (signup: Signup) => void;
+  /** Paid groups sent from Liste d'attente (« Envoyer en session »), waiting beside the sign-ups. */
+  queued: QueuedGroup[];
+  onAddQueued: (group: QueuedGroup) => void;
+  onRemoveQueued: (group: QueuedGroup) => void;
 };
 
-export function SignupPanel({ signups, formUrl, state, onAdd, onArchive }: SignupPanelProps) {
+export function SignupPanel({ signups, formUrl, state, onAdd, onArchive, queued, onAddQueued, onRemoveQueued }: SignupPanelProps) {
   const queue = useQueue();
-  const waiting = signups.filter((s) => s.status === "new");
+  // A group sent from Liste d'attente is shown once: its phone sign-up, if still waiting, gives way.
+  const sentCodes = new Set(queued.map((g) => g.code));
+  const waiting = signups.filter((s) => s.status === "new" && !(s.queueCode && sentCodes.has(s.queueCode)));
   const time = (iso: string) => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
   // Payment lives in the caisse queue, never here: this panel only reads what the desk decided.
@@ -65,7 +72,7 @@ export function SignupPanel({ signups, formUrl, state, onAdd, onArchive }: Signu
     <section className="panel signup-panel" style={{ marginTop: 18 }}>
       <div className="panel-header">
         <div><span className="panel-kicker">INSCRIPTIONS CLIENTS</span><h2>Ils se sont inscrits sur leur téléphone</h2></div>
-        <span className="signup-count">{waiting.length} en attente</span>
+        <span className="signup-count">{waiting.length + queued.length} en attente</span>
       </div>
 
       <div className="signup-body">
@@ -80,7 +87,47 @@ export function SignupPanel({ signups, formUrl, state, onAdd, onArchive }: Signu
         </aside>
 
         <div className="signup-list">
-          {waiting.length === 0 ? (
+          {queued.map((group) => {
+            // Paid is what unlocks a kart, here as for the phone sign-ups: read live from the till.
+            const reservation = queue.reservations.find((r) => r.code === group.code);
+            const paid = !!reservation && ["PAYEE", "EN_PISTE", "TERMINEE"].includes(reservation.status);
+            const label = !reservation ? (queue.online ? "Introuvable" : "Borne injoignable")
+              : paid ? `Payée · ${reservation.paymentMethod === "Espèces" ? "ESP" : "CB"}` : "À encaisser";
+            return (
+              <article key={`q-${group.code}`} className={"signup-row is-" + (paid ? "paid" : reservation ? "unpaid" : "absent")}>
+                <span className="signup-code">{group.clientCode ?? group.code}</span>
+                <div className="signup-identity">
+                  <strong>{group.contactName}{group.pilots.length > 1 ? ` + ${group.pilots.length - 1}` : ""}</strong>
+                  <small>Envoyé depuis la liste d’attente · {group.code}</small>
+                  {group.pack ? <small style={{ color: "#d8ff35", fontWeight: 700 }}>{group.pack}</small> : null}
+                  <ul className="signup-players">
+                    {group.pilots.map((pilot, index) => (
+                      <li key={`${group.code}-${index}`} title={pilot.name}>
+                        <DriverAvatar pilot={null} seed={pilot.name} size="26px" />
+                        <span>{pilot.name}</span>
+                        <em>{pilot.kart ? `Kart ${pilot.kart}` : "kart à choisir"}</em>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <span className="signup-time">
+                  <b className={"signup-pay is-" + (paid ? "paid" : reservation ? "unpaid" : "absent")}>
+                    {paid ? <Check size={11} /> : reservation ? <Wallet size={11} /> : null}
+                    {label}
+                  </b>
+                  {new Date(group.sentAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+                <div className="signup-actions">
+                  <button type="button" className="primary-button" onClick={() => onAddQueued(group)} disabled={!paid}
+                    title={paid ? undefined : "Encaissez d’abord dans la Liste d’attente"}>
+                    <UserPlus size={14} /> Ajouter {group.pilots.length > 1 ? `les ${group.pilots.length}` : ""}
+                  </button>
+                  <button type="button" className="secondary-button" aria-label="Retirer" title="Retirer de la liste" onClick={() => onRemoveQueued(group)}><Archive size={14} /></button>
+                </div>
+              </article>
+            );
+          })}
+          {waiting.length === 0 && queued.length === 0 ? (
             <div className="empty-state" style={{ padding: "26px 18px" }}>
               <UserPlus size={22} />
               <strong>{state === "ready" ? "Aucune inscription en attente" : state === "offline" ? "Pont de chronométrage hors ligne" : "Chargement…"}</strong>

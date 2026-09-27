@@ -17,7 +17,21 @@
 import fs from "node:fs";
 import { cloudConfigured, cloudGet, cloudPatch, cloudPut } from "./cloud.mjs";
 import { buildReports, diffUpdates, garageDoc, isSimulated, liveDoc, raceDoc, trackDoc } from "./report-docs.mjs";
-import { fuelDayKey } from "../../lib/fuel-rules.mjs";
+import { fuelDayKey, tankFrom } from "../../lib/fuel-rules.mjs";
+import { reportDoc as disbursementDoc } from "../../lib/disbursement-rules.mjs";
+
+/** Every local day from `first` to `last` (YYYY-MM-DD), at most the last 120. */
+function daysFrom(first, last) {
+  const out = [];
+  const d = new Date(`${first}T12:00:00`);
+  while (out.length < 400) {
+    const key = fuelDayKey(d.getTime());
+    out.push(key);
+    if (key >= last) break;
+    d.setDate(d.getDate() + 1);
+  }
+  return out.slice(-120);
+}
 
 const DESK_EVERY_MS = 30_000;
 const LIVE_EVERY_MS = 2_000;
@@ -53,15 +67,25 @@ export function startReportSync({ deskUrl, timingUrl = "http://127.0.0.1:8795", 
   // Races never change once saved; remember which were sent, across restarts, so a restart
   // does not download and re-send the whole season.
   let racesSent = {};
-  try { racesSent = JSON.parse(fs.readFileSync(stateFile, "utf8")).races || {}; } catch { /* first run */ }
-  const saveState = () => { try { fs.writeFileSync(stateFile, JSON.stringify({ races: racesSent })); } catch { /* next round */ } };
+  // Décaissement photos never change either: each is sent once ("<request id>/<photo id>").
+  let photosSent = new Set();
+  try {
+    const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    racesSent = state.races || {};
+    photosSent = new Set(Array.isArray(state.photos) ? state.photos : []);
+  } catch { /* first run */ }
+  const saveState = () => { try { fs.writeFileSync(stateFile, JSON.stringify({ races: racesSent, photos: [...photosSent] })); } catch { /* next round */ } };
 
   let primed = false;
   let todayFp = null;
   let trackFp = null;
   const garageFp = {};
-  // Saved races do not change: their laps are fetched once, for today's fuel.
+  // Décaissements already in Firebase (id -> fingerprint), so only changes are sent.
+  let disbPushed = new Map();
+  // Saved races do not change: their laps are fetched once, for the fuel they burned.
   const raceDetails = new Map();
+  // Free runs of past days, read once each (day -> stints).
+  const stintDays = new Map();
   let liveFp = null;
   let liveActive = false;
   let lastPushAt = 0;
@@ -78,6 +102,8 @@ export function startReportSync({ deskUrl, timingUrl = "http://127.0.0.1:8795", 
       const keys = await cloudGet(`reports/${prefix}.json?shallow=true`);
       for (const id of Object.keys(keys || {})) pushed[prefix].set(id, null);
     }
+    const disbKeys = await cloudGet("reports/disbursements.json?shallow=true");
+    for (const id of Object.keys(disbKeys || {})) disbPushed.set(id, null);
     primed = true;
   }
 
@@ -118,6 +144,35 @@ export function startReportSync({ deskUrl, timingUrl = "http://127.0.0.1:8795", 
         }
       } catch { /* the desk is unreachable: already reported above */ }
 
+      // ---- décaissements, from the desk: every request with its whole history
+      try {
+        const body = await getJson(`${deskUrl}/api/disbursements`);
+        if (body && Array.isArray(body.disbursements)) {
+          const desired = Object.fromEntries(body.disbursements.map((d) => [d.id, disbursementDoc(d)]));
+          const { updates: u, fingerprints } = diffUpdates("disbursements", desired, disbPushed);
+          Object.assign(updates, u);
+          accepted.push(() => { disbPushed = new Map(Object.entries(fingerprints)); });
+          // Their photos, once each and apart from the list (/attachments, read by the API one
+          // at a time), a few per round so a batch of photos never holds up the rest.
+          let uploads = 0;
+          for (const d of body.disbursements) {
+            for (const a of d.attachments || []) {
+              const key = `${d.id}/${a.id}`;
+              if (photosSent.has(key) || uploads >= 4) continue;
+              try {
+                const res = await fetch(`${deskUrl}/api/disbursements/${encodeURIComponent(d.id)}/pieces/${encodeURIComponent(a.id)}`, { signal: AbortSignal.timeout(15_000) });
+                if (!res.ok) continue;
+                const data = Buffer.from(await res.arrayBuffer()).toString("base64");
+                await cloudPut(`attachments/disbursements/${d.id}/${a.id}`, { type: a.type, size: a.size, addedAt: Date.parse(a.addedAt) || null, data });
+                photosSent.add(key);
+                uploads += 1;
+                saveState();
+              } catch { /* this photo next round */ }
+            }
+          }
+        }
+      } catch { /* a desk started before décaissements existed has none to send */ }
+
       // ---- races, from Timing Control
       let list = null;
       try { list = (await getJson(`${timingUrl}/api/races`)).races; }
@@ -140,27 +195,40 @@ export function startReportSync({ deskUrl, timingUrl = "http://127.0.0.1:8795", 
         accepted.push(() => { Object.assign(racesSent, sentNow); if (Object.keys(sentNow).length) saveState(); });
       }
 
-      // ---- the Garage: today's fuel and the spare parts
+      // ---- the Garage: the barrel's running stock, today's fuel and the spare parts
       try {
         const today = fuelDayKey(Date.now());
-        const todays = [];
+        const [fuelFile, garageFile] = await Promise.all([
+          getJson(`${deskUrl}/api/fuel`).catch(() => null),
+          getJson(`${deskUrl}/api/garage`).catch(() => null),
+        ]);
+        // The stock runs from its start (day one, or the last fill): every race and free run
+        // since then counts, not only today's.
+        const tank = tankFrom(fuelFile, (fuelFile && fuelFile.settings && fuelFile.settings.capacityL) || 500);
+        const since = tank ? Date.parse(tank.baseAt) : new Date(`${today}T00:00:00`).getTime();
+        const races = [];
         for (const summary of Array.isArray(list) ? list : []) {
           const when = (summary.finishedAt ?? summary.startedAt ?? summary.savedAt ?? 0) * 1000;
-          if (!summary.raceId || isSimulated(summary) || fuelDayKey(when) !== today) continue;
+          if (!summary.raceId || isSimulated(summary) || (when < since && fuelDayKey(when) !== today)) continue;
           if (!raceDetails.has(summary.raceId)) {
             try {
               const detail = (await getJson(`${timingUrl}/api/races/${encodeURIComponent(summary.raceId)}`)).race;
               if (detail) raceDetails.set(summary.raceId, detail);
             } catch { /* next round */ }
           }
-          if (raceDetails.has(summary.raceId)) todays.push(raceDetails.get(summary.raceId));
+          if (raceDetails.has(summary.raceId)) races.push(raceDetails.get(summary.raceId));
         }
-        const [fuelFile, garageFile, activity] = await Promise.all([
-          getJson(`${deskUrl}/api/fuel`).catch(() => null),
-          getJson(`${deskUrl}/api/garage`).catch(() => null),
-          getJson(`${timingUrl}/api/activity/${today}`).catch(() => null),   // an older chrono has none
-        ]);
-        const doc = garageDoc({ fuelFile, garageFile, races: todays, stints: (activity && activity.stints) || [] });
+        // Karts going round outside a race, day by day since the start; a past day never changes,
+        // so it is read once. An older chrono has no activity log: none counted.
+        const stints = [];
+        for (const day of daysFrom(fuelDayKey(since), today)) {
+          if (day !== today && stintDays.has(day)) { stints.push(...stintDays.get(day)); continue; }
+          const activity = await getJson(`${timingUrl}/api/activity/${day}`).catch(() => null);
+          const dayStints = (activity && activity.stints) || [];
+          if (day !== today && activity) stintDays.set(day, dayStints);
+          stints.push(...dayStints);
+        }
+        const doc = garageDoc({ fuelFile, garageFile, races, stints });
         const pieces = { "garage/fuel/today": doc.fuelToday, [`garage/fuel/days/${today}`]: doc.fuelDay };
         if (doc.parts) pieces["garage/parts"] = doc.parts;
         for (const [path, value] of Object.entries(pieces)) {
@@ -206,6 +274,45 @@ export function startReportSync({ deskUrl, timingUrl = "http://127.0.0.1:8795", 
     } catch { /* chrono closed: the app keeps the last state, with its updatedAt */ }
     finally { liveBusy = false; }
   }
+
+  // ---- the app's answers to décaissements ------------------------------------------------
+  // The MegaKart API writes each decision to /decisions/disbursements/<id>; here it is applied at
+  // the desk (which checks it and adds it to the history), the updated request is sent back at
+  // once, and the decision is removed. A decision the desk cannot take yet (desk closed, or too
+  // old to know décaissements) stays, and is tried again.
+  let decisionsBusy = false;
+  async function applyDecisions() {
+    if (decisionsBusy) return;
+    decisionsBusy = true;
+    try {
+      const waiting = await cloudGet("decisions/disbursements.json");
+      for (const [id, decision] of Object.entries(waiting || {})) {
+        let res;
+        try {
+          res = await fetch(`${deskUrl}/api/disbursements/${encodeURIComponent(id)}/decision`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(decision), signal: AbortSignal.timeout(8000),
+          });
+        } catch { warnOnce("decisions-desk", "[décaissements] accueil injoignable : décision gardée pour plus tard"); continue; }
+        const body = await res.json().catch(() => null);
+        if (res.ok && body && body.id) {
+          warned.delete("decisions-desk");
+          await cloudPatch("reports", { [`disbursements/${body.id}`]: disbursementDoc(body) });
+          disbPushed.set(body.id, JSON.stringify(disbursementDoc(body)));
+          log(`[décaissements] ${body.code} ${body.status === "APPROUVE" ? "approuvé" : "refusé"} par ${decision.by} (application)`);
+        } else if (!body || body.error === "Route inconnue.") {
+          warnOnce("decisions-old", "[décaissements] l'accueil ne connaît pas encore les décaissements : appuyez sur Synchroniser");
+          continue;   // kept until the desk is updated
+        } else {
+          log(`[décaissements] décision pour ${id} non appliquée : ${body.error}`);
+        }
+        // Applied, or refused for good (already decided, unknown request): done either way.
+        await cloudPatch("decisions", { [`disbursements/${id}`]: null });
+      }
+    } catch { /* Firebase unreachable: next time */ }
+    finally { decisionsBusy = false; }
+  }
+  setInterval(() => { void applyDecisions(); }, 5_000);
 
   setTimeout(() => { void round(); }, 5_000);
   setInterval(() => { void round(); }, DESK_EVERY_MS);

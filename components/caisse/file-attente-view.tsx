@@ -12,7 +12,7 @@
 //   - nothing claims money was taken unless the server said so
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Send } from "lucide-react";
 import { useQueue, QUEUE_STATUS_LABELS, type Reservation, type QueueStatus } from "@/hooks/use-queue";
 import { useKartMap } from "@/hooks/use-kart-map";
 import { useTimingKarts } from "@/hooks/use-timing-karts";
@@ -20,6 +20,8 @@ import { useSignups } from "@/hooks/use-signups";
 import { signupPlayers, type Signup } from "@/lib/bridge-client";
 import { PackPicker, type ClientChoice } from "@/components/caisse/pack-picker";
 import { ReplayDialog } from "@/components/caisse/replay-dialog";
+import { allInDraft, DRAFT_CHANGED, DRAFT_KEY, loadDraft, type SessionDraft } from "@/lib/session-draft";
+import { loadQueue, QUEUE_CHANGED, QUEUE_KEY, queueGroup, type QueuedGroup } from "@/lib/session-queue";
 import { codesFrom, DELETE_PRESSES, findByCode, nextPress, PRESS_WINDOW_MS, type PressState } from "@/lib/queue-delete";
 
 const KART_COLOR_LABEL: Record<string, string> = { blue: "Bleu", black: "Noir", green: "Vert" };
@@ -59,6 +61,54 @@ export function FileAttenteView({ search }: { search: string }) {
   const [replaying, setReplaying] = useState(false);
   const [replayed, setReplayed] = useState<string | null>(null);
   const clientCodeOf = useCallback((code: string) => signupByQueue.get(code)?.code ?? null, [signupByQueue]);
+  // Where a paid group stands on Sessions: waiting in "Inscriptions clients", or already in the
+  // race being prepared - so the button says so instead of sending it twice.
+  const [draft, setDraft] = useState<SessionDraft | null>(() => loadDraft());
+  const [queuedGroups, setQueuedGroups] = useState<QueuedGroup[]>(() => loadQueue());
+  const [sent, setSent] = useState<string | null>(null);
+  useEffect(() => {
+    const reload = () => { setDraft(loadDraft()); setQueuedGroups(loadQueue()); };
+    const onStorage = (e: StorageEvent) => { if (e.key === DRAFT_KEY || e.key === QUEUE_KEY) reload(); };
+    window.addEventListener(DRAFT_CHANGED, reload);
+    window.addEventListener(QUEUE_CHANGED, reload);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(DRAFT_CHANGED, reload);
+      window.removeEventListener(QUEUE_CHANGED, reload);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+  useEffect(() => {
+    if (!sent) return;
+    const t = window.setTimeout(() => setSent(null), 9000);
+    return () => window.clearTimeout(t);
+  }, [sent]);
+  // Paid → Sessions, into "Inscriptions clients", where « Ajouter » puts the group in the next race.
+  const queueForSession = (r: Reservation) => {
+    const clientCode = signupByQueue.get(r.code)?.code ?? r.replayOf?.clientCode ?? null;
+    queueGroup({
+      code: r.code, clientCode, contactName: r.contactName,
+      pilots: r.pilots.map((p) => ({ name: p.fullName, kart: p.kartNumber })),
+      pack: packView(r, signupByQueue.get(r.code))?.label ?? null,
+    });
+    return clientCode;
+  };
+  const sendToSession = (r: Reservation) => {
+    const clientCode = queueForSession(r);
+    setSent(`${clientCode ?? r.code} · ${r.pilots.length} pilote${r.pilots.length > 1 ? "s" : ""} envoyé${r.pilots.length > 1 ? "s" : ""} dans Sessions → Inscriptions clients`);
+  };
+  // Standby on Sessions without anyone having to press a button. A phone sign-up is already
+  // listed there by the bridge; a group with none - a re-race (« Rejouer »), a walk-in created at
+  // the counter - is put in the same list here: when it is created (shown « À encaisser », its
+  // « Ajouter » locked) and again when it is paid (then « Ajouter » unlocks).
+  const standby = (r: Reservation) => {
+    const signup = signupByQueue.get(r.code);
+    if (signup && signup.status === "new") return;
+    queueForSession(r);
+  };
+  const sessionState = (r: Reservation): "queued" | "in" | null =>
+    queuedGroups.some((g) => g.code === r.code) ? "queued"
+      : allInDraft(draft, r.pilots.map((p) => p.fullName)) ? "in" : null;
 
   const saveOperator = (v: string) => {
     setOperator(v);
@@ -252,13 +302,15 @@ export function FileAttenteView({ search }: { search: string }) {
               onSetPack={(offerId) => q.setPack(r.code, offerId, operator || "CAISSE")}
               open={openCode === r.code}
               onToggle={() => setOpenCode(openCode === r.code ? null : r.code)}
-              onPay={(mode, amount, split) => void q.pay(r.code, mode, operator || "CAISSE", amount, split)}
+              onPay={(mode, amount, split) => { void q.pay(r.code, mode, operator || "CAISSE", amount, split).then(() => standby(r)); }}
               onUnpay={() => void q.unpay(r.code)}
               onStatus={(s) => void q.setStatus(r.code, s)}
               onKarts={(map) => void q.assignKarts(r.code, map)}
               presses={press && press.code === r.code ? press.count : 0}
               onHover={(on) => setHoverCode((cur) => (on ? r.code : cur === r.code ? null : cur))}
               onRemove={() => void deleteCodes([r.code])}
+              inSession={sessionState(r)}
+              onSendToSession={() => sendToSession(r)}
               onRestore={() => void q.restore(r.code)}
               onErase={() => void q.erase(r.code)}
             />
@@ -276,6 +328,7 @@ export function FileAttenteView({ search }: { search: string }) {
           onClose={() => setReplaying(false)}
           onDone={(created) => {
             setReplaying(false);
+            standby(created);
             setFilter("EN_ATTENTE");
             setOpenCode(null);
             setReplayed(`${created.code} · ${created.contactName} · ${created.pilots.length} pilote${created.pilots.length > 1 ? "s" : ""} remis en attente`);
@@ -283,7 +336,14 @@ export function FileAttenteView({ search }: { search: string }) {
         />
       )}
 
-      {replayed && !undo && (
+      {sent && !undo && (
+        <div className="fa-toast" role="status">
+          <span>{sent}</span>
+          <button type="button" onClick={() => { setSent(null); window.location.hash = "#/sessions"; }}>Ouvrir Sessions</button>
+        </div>
+      )}
+
+      {replayed && !undo && !sent && (
         <div className="fa-toast" role="status">
           <span>{replayed}</span>
           <button type="button" onClick={() => setReplayed(null)}>OK</button>
@@ -340,7 +400,7 @@ function clientChoice(signup: Signup | undefined): ClientChoice {
 }
 
 function Row({ r, karts, pack, clientCode, clientChoice, onSetPack, open, onToggle, onPay, onUnpay, onStatus, onKarts,
-                presses, onHover, onRemove, onRestore, onErase }: {
+                presses, onHover, onRemove, onRestore, onErase, inSession, onSendToSession }: {
   r: Reservation;
   karts: Record<string, { transponder: string }>;
   pack: PackView | null;
@@ -359,6 +419,10 @@ function Row({ r, karts, pack, clientCode, clientChoice, onSetPack, open, onTogg
   onRemove: () => void;
   onRestore: () => void;
   onErase: () => void;
+  /** On Sessions: waiting in "Inscriptions clients" ("queued"), or already in the race being prepared ("in"). */
+  inSession: "queued" | "in" | null;
+  /** Paid: put its pilots (and their karts) in the race being prepared on Sessions. */
+  onSendToSession: () => void;
 }) {
   const [assign, setAssign] = useState<Record<string, string>>(() =>
     Object.fromEntries(r.pilots.map((p) => [p.id, p.kartNumber != null ? String(p.kartNumber) : ""])));
@@ -506,7 +570,15 @@ function Row({ r, karts, pack, clientCode, clientChoice, onSetPack, open, onTogg
             <button type="button" className="fa-undo" onClick={onRestore}
               title={r.deletedFrom ? `Revient en « ${QUEUE_STATUS_LABELS[r.deletedFrom]} »` : undefined}>Restaurer</button>
           ) : paid ? (
-            <button type="button" className="fa-undo" onClick={onUnpay}>Corriger</button>
+            <>
+              <button type="button" className={"fa-send" + (inSession ? " is-in" : "")} onClick={onSendToSession}
+                title={inSession === "queued" ? "Déjà dans Sessions → Inscriptions clients : cliquez pour renvoyer (karts mis à jour)"
+                  : inSession === "in" ? "Ces pilotes sont déjà dans la session en préparation"
+                  : "Envoyer ces pilotes et leurs karts dans Sessions → Inscriptions clients"}>
+                <Send size={14} /> {inSession === "queued" ? "Envoyé à Sessions" : inSession === "in" ? "Dans la session" : "Envoyer en session"}
+              </button>
+              <button type="button" className="fa-undo" onClick={onUnpay}>Corriger</button>
+            </>
           ) : (
             <button type="button" className="fa-cash" onClick={openCashing}>
               Encaisser{pack?.total != null ? ` · ${pack.total} DH` : ` · ${r.paymentMethod === "Espèces" ? "ESP" : "CB"}`}

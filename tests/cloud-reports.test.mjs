@@ -137,7 +137,8 @@ test("the Garage for the app: today's fuel from the reading, races and free runs
   const doc = R.garageDoc({
     now,
     fuelFile: { settings: { juniorLph: 2.4, gtLph: 10, juniorKartNumbers: [1], reserveL: 75 },
-                days: [{ date: "2026-09-24", openingL: 100, refillL: 0, measuredAt: new Date(2026, 8, 24, 9, 0).toISOString() }] },
+                days: [{ date: "2026-09-24", openingL: 100, refillL: 0, measuredAt: new Date(2026, 8, 24, 9, 0).toISOString() }],
+                tank: { baseL: 100, baseAt: new Date(2026, 8, 24, 9, 0).toISOString(), refills: [] } },
     garageFile: { parts: [{ id: "a", name: "Plaquettes", stock: 1, minStock: 2, unit: "jeu" }, { id: "b", name: "Bougie", stock: 5, minStock: 2 }],
                   moves: [{ at: new Date(2026, 8, 24, 19, 0).toISOString(), partName: "Plaquettes", qty: -1, kart: 7, note: "usées" }] },
     races: [{ raceId: "R", name: "SESSION 1", startedAt: s(18), finishedAt: s(18, 12), savedAt: s(18, 12), durationS: 480,
@@ -159,4 +160,23 @@ test("the Garage for the app: today's fuel from the reading, races and free runs
   assert.equal(R.garageDoc({ now, fuelFile: { days: [] }, garageFile: null, races: [], stints: [] }).fuelToday.levelPct, null,
     "no morning reading: no level");
   assert.equal(R.garageDoc({ now, fuelFile: null, garageFile: null, races: [], stints: [] }).parts, null);
+});
+
+test("the app's barrel runs on from day one: never reset by the calendar, every race since taken off", () => {
+  const s = (d, h, m = 0) => new Date(2026, 8, d, h, m).getTime() / 1000;
+  const race = (id, d, h) => ({ raceId: id, name: id, startedAt: s(d, h), finishedAt: s(d, h, 8), savedAt: s(d, h, 8), durationS: 480, racers: [{ kart: 3, laps: 10 }, { kart: 5, laps: 9 }] });
+  // No running stock saved yet: the log's first day, the barrel full (500 L), then two days of races.
+  const doc = R.garageDoc({
+    now: new Date(2026, 8, 27, 20, 0),
+    fuelFile: { settings: { gtLph: 10, capacityL: 500 }, days: [{ date: "2026-09-22", openingL: 500, refillL: 0 }, { date: "2026-09-26", openingL: 500, refillL: 0 }] },
+    garageFile: null,
+    races: [race("A", 22, 18), race("B", 26, 20), race("C", 27, 19)],
+    stints: [],
+  });
+  const perRace = Math.round(2 * 10 * (8 / 60) * 100) / 100;   // two GT karts, 8 minutes
+  assert.equal(doc.fuelToday.readingL, 500);
+  assert.equal(doc.fuelToday.measuredAt, new Date(2026, 8, 22).getTime(), "counted from day one, not from this morning");
+  assert.equal(doc.fuelToday.racesSinceReading, 3);
+  assert.equal(doc.fuelToday.stockL, Math.round((500 - 3 * perRace) * 100) / 100, "the 500 L typed on 26/09 did not reset it");
+  assert.equal(doc.fuelToday.races.length, 1, "today's list is still today's");
 });

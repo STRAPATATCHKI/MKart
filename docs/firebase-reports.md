@@ -130,6 +130,17 @@ junior rate, the others at the GT rate (both set on the venue's Garage page).
 `toReorder[]` (the parts at or under their minimum), `moves[]` (the last 100: `at`, `part`, `qty`,
 `kind` `entree`/`sortie`, `kart`, `note`, `by`), `savedAt`.
 
+### `/reports/disbursements/{id}` — décaissements (money out)
+
+Every request made at the desk, with its whole history: `code`, `amount`, `category`,
+`description`, `beneficiary`, `method`, `reference`, `urgent`, `requestedBy`, `createdAt`, `day`,
+`status` (`EN_ATTENTE`, `APPROUVE`, `REFUSE`, `ANNULE`, `DECAISSE`), `decision`, `paidOutAt`,
+`history[]`. Field by field in `docs/megakart-api.md` → "Décaissements". The app approves or
+refuses through the MegaKart API (`POST /v1/disbursements/{id}/decision`), which leaves the
+decision under `/decisions/disbursements/{id}` for the venue PC to apply; nobody writes here directly.
+Photos joined to a request are kept apart, under `/attachments/disbursements/{id}/{photo id}`
+(`type`, `size`, `data` in base64), so the list stays light; the API serves them as images.
+
 ### `/reports/meta`
 
 `venue`, `version`, `updatedAt` — the PC writes at least every 5 minutes; an older value means

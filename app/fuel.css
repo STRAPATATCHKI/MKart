@@ -181,3 +181,6 @@
 .fuel-runs-head span { color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .16em; }
 .fuel-runs-head small { color: var(--muted); font-size: 11px; }
 .fuel-races--runs strong { color: #8ad7ff; }
+
+/* The running stock: where it starts from, and what has been taken off since. */
+.fuel-since { margin: 0; padding: 9px 12px; border: 1px solid var(--line-soft); border-radius: 9px; background: #0c110c; color: var(--muted); font-size: 12px; line-height: 1.45; }

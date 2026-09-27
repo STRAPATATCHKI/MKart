@@ -11,7 +11,7 @@ import { useFuel } from "@/hooks/use-fuel";
 import { useSavedRaces } from "@/hooks/use-saved-races";
 import { useFreeRuns } from "@/hooks/use-free-runs";
 import {
-  dailyUsage, dayFuel, estimateFuel, formatHours, formatL, liveFuelStock, parseKartList, todayKey,
+  dailyUsage, dayFuel, daysSince, estimateFuel, formatHours, formatL, parseKartList, tankStock, todayKey,
   type FuelSettings,
 } from "@/lib/fuel-store";
 
@@ -56,21 +56,25 @@ const lastDays = (n: number) => Array.from({ length: n }, (_, i) => {
 });
 
 export function FuelView({ embedded = false }: { embedded?: boolean }) {
-  const { settings, days, today, saveDay, saveSettings } = useFuel();
+  const { settings, days, tank, saveSettings, addRefill: pourIn, setLevel } = useFuel();
   const { races, state: raceState } = useSavedRaces();
-  const { stints, state: runState } = useFreeRuns(7);
-  // Uncontrolled, keyed on the stored reading: it shows what is saved, stays editable, and needs
-  // no effect to copy the stored value into state.
-  const openingRef = useRef<HTMLInputElement>(null);
+  // Free runs from the start of the running stock (and a week at least, for the chart).
+  const { stints, state: runState } = useFreeRuns(Math.max(7, tank ? daysSince(tank.baseAt) : 7));
+  const levelRef = useRef<HTMLInputElement>(null);
   const [refillInput, setRefillInput] = useState("");
   const [saved, setSaved] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
   const fuel = useMemo(() => dayFuel(races, stints, settings, todayKey()), [races, stints, settings]);
   const dayRaces = fuel.races;
-  const { stockL, burnedL } = liveFuelStock(today, fuel);
+  // One running stock, never reset by the calendar: full on day one (or the last fill), plus
+  // top-ups, minus every race and free run since.
+  const stock = useMemo(() => tankStock(tank, races, stints, settings), [tank, races, stints, settings]);
+  const stockL = stock ? Math.max(0, stock.stockL) : 0;
+  const burnedL = stock?.burnedL ?? 0;
   const burnedTodayL = fuel.totalL;
   const estimate = useMemo(() => estimateFuel(stockL, settings), [stockL, settings]);
+  const baseAt = tank ? Date.parse(tank.baseAt) : null;
   const shownStock = useCountUp(stockL);
   const shownLevel = useCountUp(estimate.level * 100);
 
@@ -84,10 +88,12 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
   })).reverse(), [races, stints, settings, measured]);
   const peak = Math.max(1, ...history.map((h) => h.litres));
 
-  const saveOpening = () => {
-    const litres = Math.max(0, Number((openingRef.current?.value ?? "").replace(",", ".")) || 0);
-    // The time of the reading matters: races before it are already in the barrel's level.
-    saveDay({ date: todayKey(), openingL: litres, refillL: today?.refillL ?? 0, measuredAt: new Date().toISOString(), note: today?.note });
+  // Filled up, or measured with the dipstick: the count starts again from this level. Only then -
+  // never each morning, which is what used to throw away the fuel burned the day before.
+  const saveLevel = () => {
+    const litres = Math.max(0, Number((levelRef.current?.value ?? "").replace(",", ".")) || 0);
+    if (!window.confirm(`Le stock repart de ${formatL(litres)} maintenant (plein fait ou niveau mesuré) ?`)) return;
+    setLevel(litres);
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
   };
@@ -95,7 +101,7 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
   const addRefill = () => {
     const litres = Math.max(0, Number(refillInput.replace(",", ".")) || 0);
     if (!litres) return;
-    saveDay({ date: todayKey(), openingL: today?.openingL ?? 0, refillL: (today?.refillL ?? 0) + litres, measuredAt: today?.measuredAt, note: today?.note });
+    pourIn(litres);
     setRefillInput("");
   };
 
@@ -107,6 +113,7 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
 
   const dayLabel = (date: string) => new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "short" });
   const time = (ms: number) => new Date(ms).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const dateLabel = (ms: number) => new Date(ms).toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
   const noJuniorList = (settings.juniorKartNumbers ?? []).length === 0;
 
   return (
@@ -122,7 +129,7 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
           <div>
             <span className="eyebrow"><i /> CARBURANT</span>
             <h1>Consommation &amp; stock</h1>
-            <p>Relevé du matin, appoints, et chaque course réelle déduite du stock.</p>
+            <p>Un stock continu : plein de départ, appoints, et chaque course réelle déduite.</p>
           </div>
           <button type="button" className="secondary-button" onClick={() => setShowSettings((v) => !v)}>
             <Settings2 size={15} /> Paramètres
@@ -130,7 +137,13 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
         </header>
       )}
 
-      {estimate.low && today && (
+      {stock && stock.stockL < 0 && (
+        <div className="fuel-alert" role="status">
+          <AlertTriangle size={17} />
+          <span><strong>Le calcul passe sous zéro</strong> ({formatL(stock.stockL)}) : un appoint n’a sans doute pas été enregistré. Ajoutez-le, ou enregistrez le niveau mesuré.</span>
+        </div>
+      )}
+      {estimate.low && stock && stock.stockL >= 0 && (
         <div className="fuel-alert" role="status">
           <AlertTriangle size={17} />
           <span><strong>Stock bas</strong> — il reste {formatL(stockL)} sur {formatL(settings.capacityL, 0)}. Prévoyez une livraison.</span>
@@ -144,12 +157,12 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
       )}
 
       <section className="fuel-kpis">
-        <article className={estimate.low && today ? "is-low" : ""}>
+        <article className={estimate.low && stock ? "is-low" : ""}>
           <Fuel size={18} />
           <span>
             <small>STOCK ACTUEL</small>
-            <strong>{today ? <>{shownStock.toFixed(1)}<em>L</em></> : "—"}</strong>
-            <b>{today ? `${Math.round(shownLevel)} % de la cuve${burnedL > 0 ? ` · −${formatL(burnedL)} depuis le relevé` : ""}` : "Faites le relevé du matin"}</b>
+            <strong>{stock ? <>{shownStock.toFixed(1)}<em>L</em></> : "—"}</strong>
+            <b>{stock && baseAt != null ? `${Math.round(shownLevel)} % de la cuve · −${formatL(burnedL)} depuis le ${dateLabel(baseAt)}` : "Enregistrez le niveau de la cuve"}</b>
           </span>
         </article>
         <article>
@@ -162,7 +175,7 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
         </article>
         <article>
           <Timer size={18} />
-          <span><small>AUTONOMIE</small><strong>{today ? formatHours(estimate.hoursLeft) : "—"}</strong><b>{estimate.sessionsLeft} session{estimate.sessionsLeft > 1 ? "s" : ""} de {settings.sessionMinutes} min, flotte complète</b></span>
+          <span><small>AUTONOMIE</small><strong>{stock ? formatHours(estimate.hoursLeft) : "—"}</strong><b>{estimate.sessionsLeft} session{estimate.sessionsLeft > 1 ? "s" : ""} de {settings.sessionMinutes} min, flotte complète</b></span>
         </article>
         <article>
           <Gauge size={18} />
@@ -172,31 +185,18 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
 
       <section className="fuel-main">
         <article className="panel fuel-barrel-card">
-          <div className="panel-header"><div><span className="panel-kicker">CUVE</span><h2>Relevé du matin</h2></div></div>
+          <div className="panel-header"><div><span className="panel-kicker">CUVE</span><h2>Stock continu</h2></div></div>
           <div className="fuel-barrel-body">
             <FuelBarrel level={estimate.level} low={estimate.low} />
             <div className="fuel-barrel-side">
-              <label className="fuel-field">
-                <span>Essence mesurée ce matin</span>
-                <div className="fuel-input-row">
-                  <input
-                    key={`${today?.date ?? "new"}:${today?.openingL ?? ""}`}
-                    ref={openingRef}
-                    style={numberField}
-                    inputMode="decimal"
-                    defaultValue={today ? String(today.openingL) : ""}
-                    onKeyDown={(e) => e.key === "Enter" && saveOpening()}
-                    placeholder={`0 – ${settings.capacityL}`}
-                    aria-label="Litres mesurés ce matin"
-                  />
-                  <button type="button" className="primary-button" onClick={saveOpening}>
-                    {saved ? <><Check size={15} /> Enregistré</> : "Enregistrer"}
-                  </button>
-                </div>
-              </label>
+              {stock && baseAt != null ? (
+                <p className="fuel-since">
+                  Depuis le {dateLabel(baseAt)} ({formatL(stock.baseL, 0)}) : {stock.races} course{stock.races > 1 ? "s" : ""} et {stock.runs} roulage{stock.runs > 1 ? "s" : ""} hors course déduits. Pas de remise à zéro chaque jour.
+                </p>
+              ) : null}
 
               <label className="fuel-field">
-                <span>Appoint dans la journée</span>
+                <span>Appoint (litres versés dans la cuve)</span>
                 <div className="fuel-input-row">
                   <input
                     style={numberField}
@@ -211,11 +211,29 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
                 </div>
               </label>
 
+              <label className="fuel-field">
+                <span>Plein fait ou niveau mesuré (le compte repart de là)</span>
+                <div className="fuel-input-row">
+                  <input
+                    ref={levelRef}
+                    style={numberField}
+                    inputMode="decimal"
+                    defaultValue={String(settings.capacityL)}
+                    onKeyDown={(e) => e.key === "Enter" && saveLevel()}
+                    placeholder={`0 – ${settings.capacityL}`}
+                    aria-label="Litres dans la cuve maintenant"
+                  />
+                  <button type="button" className="secondary-button" onClick={saveLevel}>
+                    {saved ? <><Check size={15} /> Enregistré</> : "Enregistrer"}
+                  </button>
+                </div>
+              </label>
+
               <dl className="fuel-readout">
-                <div><dt>Relevé{today?.measuredAt ? ` · ${time(Date.parse(today.measuredAt))}` : ""}</dt><dd>{today ? formatL(today.openingL) : "—"}</dd></div>
-                <div><dt>Appoints</dt><dd>{today?.refillL ? `+${formatL(today.refillL)}` : "—"}</dd></div>
+                <div><dt>Départ{baseAt != null ? ` · ${dateLabel(baseAt)}` : ""}</dt><dd>{stock ? formatL(stock.baseL) : "—"}</dd></div>
+                <div><dt>Appoints</dt><dd>{stock?.refillL ? `+${formatL(stock.refillL)}` : "—"}</dd></div>
                 <div><dt>Roulage</dt><dd>{burnedL > 0 ? `−${formatL(burnedL)}` : "—"}</dd></div>
-                <div><dt>Reste</dt><dd className="lime">{today ? formatL(stockL) : "—"}</dd></div>
+                <div><dt>Reste</dt><dd className="lime">{stock ? formatL(stock.stockL) : "—"}</dd></div>
               </dl>
             </div>
           </div>
@@ -233,8 +251,8 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
           ) : (
             <ul className="fuel-races">
               {dayRaces.map((r) => (
-                <li key={r.raceId} className={today?.measuredAt && r.at < Date.parse(today.measuredAt) ? "is-before" : ""}
-                  title={today?.measuredAt && r.at < Date.parse(today.measuredAt) ? "Avant le relevé : déjà comptée dans le niveau mesuré" : undefined}>
+                <li key={r.raceId} className={baseAt != null && r.at < baseAt ? "is-before" : ""}
+                  title={baseAt != null && r.at < baseAt ? "Avant le dernier plein : déjà comptée dans le niveau" : undefined}>
                   <time>{time(r.at)}</time>
                   <b>{r.name}</b>
                   <span>{r.minutes} min · {r.juniorKarts > 0 ? `${r.juniorKarts} junior · ` : ""}{r.gtKarts} GT</span>
@@ -257,7 +275,7 @@ export function FuelView({ embedded = false }: { embedded?: boolean }) {
           {fuel.runs.length > 0 && (
             <ul className="fuel-races fuel-races--runs">
               {fuel.runs.map((r) => (
-                <li key={`${r.transponder}-${r.start}`} className={today?.measuredAt && r.start < Date.parse(today.measuredAt) ? "is-before" : ""}>
+                <li key={`${r.transponder}-${r.start}`} className={baseAt != null && r.start < baseAt ? "is-before" : ""}>
                   <time>{time(r.start)}</time>
                   <b>{r.kart ? `Kart ${r.kart}` : r.transponder}{r.junior ? " · junior" : ""}</b>
                   <span>{r.minutes} min · {r.passes} passages</span>

@@ -6,7 +6,7 @@ import { useSessions } from "@/hooks/use-sessions";
 import { useHistory, type HistorySession } from "@/hooks/use-history";
 import { useGokartsSessions } from "@/hooks/use-gokarts-sessions";
 import { TRACK_WIDTH, TRACK_HEIGHT, LEGACY_TRACK_WIDTH, TRACK_LAYOUT_VERSION, defaultRoutePoints, makeSmoothRoute, notifyTrackChanged, saveSharedTrack, type RoutePoint } from "@/lib/track";
-import { SESSION_TYPE_LABELS, STATE_LABELS, rankModeFor, type SessionType, type SessionState } from "@/lib/megakart-session";
+import { SESSION_TYPE_LABELS, rankModeFor, type SessionType } from "@/lib/megakart-session";
 import { issueFor, sessionFormIssues } from "@/lib/session-form";
 import { CatalogPage } from "@/components/packs/catalog-page";
 import { ClientsPage } from "@/components/clients/clients-page";
@@ -16,13 +16,15 @@ import { TrackRecordCard } from "@/components/stats/track-record-card";
 import { OfferCard } from "@/components/packs/offer-card";
 import { useCatalog } from "@/hooks/use-catalog";
 import { onSale, pricePerPerson, savingLabel, totalUnits, volumeLabel, KIND_LABELS, type Offer } from "@/lib/catalog";
-import { apexController } from "@/lib/apex-session-controller";
 import { BigScreen } from "@/components/big-screen/big-screen";
 import { SouvenirPage } from "@/components/souvenir/souvenir-page";
 import { ReservationPage } from "@/components/reservation/reservation-page";
 import { DeskOnlyNotice } from "@/components/desk-only-notice";
 import { useIsCompact } from "@/hooks/use-compact";
 import { LiveRaceConsole } from "@/components/live/live-race-console";
+import { DisbursementsView } from "@/components/disbursements/disbursements-view";
+import { DRAFT_CHANGED, DRAFT_KEY, emptyDraft, loadDraft, mergePilots, nextSessionName, saveDraft } from "@/lib/session-draft";
+import { loadQueue, QUEUE_CHANGED, QUEUE_KEY, unqueueGroup, type QueuedGroup } from "@/lib/session-queue";
 import { FileAttenteView } from "@/components/caisse/file-attente-view";
 import { ResultSheet } from "@/components/results/result-sheet";
 import { useBridgeSessionSync, type BridgeSync } from "@/hooks/use-bridge-sync";
@@ -42,8 +44,8 @@ import { SOUVENIR_HASH_PREFIX } from "@/lib/race-souvenir";
 import {
   Activity, Banknote, Bell, CalendarDays, CheckCircle2,
   ChevronRight, Clock3, CreditCard, Crosshair, Flag, LayoutDashboard, Menu, MoreHorizontal,
-  PackageCheck, Pencil, PlusCircle, QrCode, Radio, RotateCcw, Save, Search,
-  Trash2, Trophy, Undo2, UsersRound, WalletCards, Wrench, X, Zap,
+  PackageCheck, Pencil, PlusCircle, QrCode, RotateCcw, Save, Search,
+  Trophy, Undo2, UsersRound, WalletCards, Wrench, X, Zap,
 } from "lucide-react";
 
 import { useQueue } from "@/hooks/use-queue";
@@ -60,6 +62,7 @@ const navItems = [
   { label: "Pass & fidélité", icon: WalletCards },
   { label: "Packs & ventes", icon: PackageCheck },
   { label: "Garage", icon: Wrench },
+  { label: "Décaissements", icon: Banknote },
   { label: "Rapports", icon: Activity },
 ];
 
@@ -490,27 +493,37 @@ function LiveRaceView({ onOpenControls }: { onOpenControls: () => void }) {
 }
 
 function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
-  const { sessions, activeId, create, remove, setActive, setState } = useSessions();
+  const { sessions, create } = useSessions();
   const gokarts = useGokartsSessions(); // live GoKarts session plan (from GoServer export)
-  const { sessions: history } = useHistory();
   const { signups, formUrl, state: signupState, update: updateSignup } = useSignups();
   // MegaKart Timing Control (the ActiveBox chrono): kart map for the form, race state for the panel.
   const timingView = useTiming();
   // The races the chrono has already saved. Watching the current race tells it when to look
   // again, so the race that was just finished is in the list without reloading the page.
   const raceHistory = useRaceHistory(timingView.race?.raceId ?? null, timingView.race?.state ?? null);
-  const [result, setResult] = useState<HistorySession | null>(null);
-  const [name, setName] = useState("");
-  const [type, setType] = useState<SessionType>("practice");
-  const [durationMin, setDurationMin] = useState(8);
+  // The form comes back as it was left (lib/session-draft.ts): pilots typed here, or sent from
+  // Liste d'attente, survive a visit to another page.
+  const [initialDraft] = useState(() => loadDraft() ?? emptyDraft());
+  const [name, setName] = useState(initialDraft.name);
+  const [type, setType] = useState<SessionType>(initialDraft.type as SessionType);
+  const [durationMin, setDurationMin] = useState(initialDraft.durationMin);
   const emptyRows = (): DriverRow[] => [
     { name: "", kart: "", transponder: "" },
     { name: "", kart: "", transponder: "" },
   ];
-  const [rows, setRows] = useState(emptyRows());
+  const [rows, setRows] = useState<DriverRow[]>(initialDraft.rows);
   // Starting grid: row order IS the grid (P1 first). Unless the operator ticks "ordre manuel",
   // the grid is drawn at random when the session is created - same rule as Timing Control.
-  const [gridManual, setGridManual] = useState(false);
+  const [gridManual, setGridManual] = useState(initialDraft.gridManual);
+  useEffect(() => { saveDraft({ name, type, durationMin, rows, gridManual }); }, [name, type, durationMin, rows, gridManual]);
+  // The form changed in another window of the dashboard.
+  useEffect(() => {
+    const reload = () => { const d = loadDraft(); if (d) setRows(d.rows); };
+    const onStorage = (e: StorageEvent) => { if (e.key === DRAFT_KEY) reload(); };
+    window.addEventListener(DRAFT_CHANGED, reload);
+    window.addEventListener("storage", onStorage);
+    return () => { window.removeEventListener(DRAFT_CHANGED, reload); window.removeEventListener("storage", onStorage); };
+  }, []);
   const shuffleGrid = () => setRows((current) => {
     const filled = current.filter((r) => r.name.trim());
     const empty = current.filter((r) => !r.name.trim());
@@ -521,6 +534,39 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
     return [...filled, ...empty];
   });
   const [notice, setNotice] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
+
+  // Paid groups sent from Liste d'attente, waiting in "Inscriptions clients" for « Ajouter ».
+  const [queued, setQueued] = useState<QueuedGroup[]>(() => loadQueue());
+  useEffect(() => {
+    const reload = () => setQueued(loadQueue());
+    const onStorage = (e: StorageEvent) => { if (e.key === QUEUE_KEY) reload(); };
+    window.addEventListener(QUEUE_CHANGED, reload);
+    window.addEventListener("storage", onStorage);
+    return () => { window.removeEventListener(QUEUE_CHANGED, reload); window.removeEventListener("storage", onStorage); };
+  }, []);
+  const addQueuedToSession = (group: QueuedGroup) => {
+    const merged = mergePilots(rows, group.pilots);
+    setRows(merged.rows);
+    unqueueGroup(group.code);
+    // Its phone sign-up, if it was still waiting, is done too: it must not come back into the list.
+    const signup = signups.find((x) => x.queueCode === group.code && x.status === "new");
+    if (signup) void updateSignup(signup.id, "assigned");
+    setNotice({
+      tone: "ok",
+      text: merged.added.length
+        ? `${merged.added.length} pilote${merged.added.length > 1 ? "s" : ""} de ${group.clientCode ?? group.code} ajouté${merged.added.length > 1 ? "s" : ""} à la session.${merged.already.length ? ` Déjà dans la session : ${merged.already.join(", ")}.` : ""}`
+        : `${group.clientCode ?? group.code} : déjà dans la session.`,
+    });
+  };
+
+  // The name continues the day's numbering (SESSION 26 after SESSION 25) until one is typed.
+  const todayKey = new Date().toDateString();
+  const suggestedName = nextSessionName([
+    ...raceHistory.races.filter((r) => r.endedAt != null && new Date(r.endedAt * 1000).toDateString() === todayKey).map((r) => r.title),
+    timingView.race?.raceName,
+    ...sessions.filter((x) => new Date(x.createdAt).toDateString() === todayKey).map((x) => x.name),
+  ]);
+  const sessionName = name.trim() ? name : suggestedName;
 
   const inp: React.CSSProperties = { background: "#0e1520", color: "#e8eef5", border: "1px solid #26303d", borderRadius: 8, padding: "9px 11px", fontSize: 14, width: "100%", fontFamily: "inherit", boxSizing: "border-box" };
   const lab: React.CSSProperties = { fontSize: 11, letterSpacing: ".04em", color: "#8aa0b6", textTransform: "uppercase", marginBottom: 6, display: "block" };
@@ -553,7 +599,7 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
 
   // Everything the form still needs before it can be sent. The button only exists when this
   // is empty, and each field wears its own reason in red until it is fixed.
-  const issues = sessionFormIssues({ name, durationMin, rows });
+  const issues = sessionFormIssues({ name: sessionName, durationMin, rows });
   const [touched, setTouched] = useState(false);
   const shown = touched ? issues : [];
   const bad = (msg: string | null): React.CSSProperties => (msg ? { ...inp, borderColor: "#ff6b69", boxShadow: "0 0 0 2px rgba(255,107,105,.18)" } : inp);
@@ -563,6 +609,7 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    const name = sessionName;   // typed, or the next number of the day
     if (issues.length) { setTouched(true); return; }   // Enter too early: now show what is missing
     let ordered = rows.filter((r) => r.name.trim());
     if (!gridManual) {
@@ -625,25 +672,6 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
     window.setTimeout(() => document.getElementById("race-control")?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
   };
 
-  const sendToApex = async (id: string) => {
-    const s = sessions.find((x) => x.id === id);
-    if (!s) return;
-    const res = await apexController.createSession(s);
-    if (res.ok) {
-      setState(id, "APEX_CREATED");
-      setNotice({ tone: "ok", text: `Session créée dans Apex (id ${res.apexSessionId}).` });
-    } else {
-      setNotice({
-        tone: "warn",
-        text:
-          res.reason === "NOT_CONFIGURED"
-            ? "Écriture Apex non configurée : la session reste côté MegaKart (« En attente Apex »). La création automatique dans GoKarts s’activera avec l’API Sessions (9122)."
-            : `Apex : ${res.reason}`,
-      });
-    }
-  };
-
-  const stateTone = (st: SessionState) => (st === "RUNNING" ? "live" : st === "FINISHED" ? "confirmed" : "pending");
 
   return (
     <div className="reservations-page">
@@ -678,13 +706,16 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
         state={signupState}
         onAdd={addSignupToSession}
         onArchive={(signup) => void updateSignup(signup.id, "archived")}
+        queued={queued}
+        onAddQueued={addQueuedToSession}
+        onRemoveQueued={(group) => unqueueGroup(group.code)}
       />
 
       <section className="panel" style={{ marginTop: 16 }}>
         <div className="panel-header"><div><span className="panel-kicker">NOUVELLE SESSION</span><h2>Créer une session</h2></div></div>
         <form onSubmit={submit} style={{ display: "grid", gap: 16, padding: "4px 2px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12 }}>
-            <label><span style={lab}>Nom de la session</span><input style={bad(issueFor(shown, "name"))} value={name} onChange={(e) => { setTouched(true); setName(e.target.value); }} placeholder="Course #28" />{note(issueFor(shown, "name"))}</label>
+            <label><span style={lab}>Nom de la session</span><input style={bad(issueFor(shown, "name"))} value={sessionName} onChange={(e) => { setTouched(true); setName(e.target.value); }} placeholder={suggestedName} title="Suit la numérotation du jour ; tapez un autre nom si besoin" />{note(issueFor(shown, "name"))}</label>
             <label><span style={lab}>Type</span>
               <select style={inp} value={type} onChange={(e) => setType(e.target.value as SessionType)}>
                 {SESSION_TYPE_LABELS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
@@ -759,37 +790,6 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
           the deck is found here. */}
       <RaceHistoryPanel history={raceHistory} />
 
-      <section className="qr-reservations-list" aria-label="Sessions créées" style={{ marginTop: 18 }}>
-        <header className="qr-list-header" style={{ gridTemplateColumns: "1.6fr 1fr 1fr 2fr 1.4fr" }}>
-          <span>SESSION</span><span>TYPE</span><span>ÉTAT</span><span>PILOTES</span><span>ACTIONS</span>
-        </header>
-        {sessions.length === 0 && <div className="empty-state"><PlusCircle size={22} /><strong>Aucune session</strong><span>Créez votre première session ci-dessus.</span></div>}
-        {sessions.map((s) => (
-          <article className="qr-reservation-row" key={s.id} style={{ gridTemplateColumns: "1.6fr 1fr 1fr 2fr 1.4fr", alignItems: "center", outline: activeId === s.id ? "1px solid #38e07b" : "none" }}>
-            <div className="qr-session"><strong>{s.name}</strong><span>{Math.round(s.durationSec / 60)} min · {s.id}</span></div>
-            <div><b>{SESSION_TYPE_LABELS.find((t) => t.value === s.type)?.label ?? s.type}</b></div>
-            <div><span className={"status-pill status-" + stateTone(s.state)}><i />{STATE_LABELS[s.state]}</span></div>
-            <div style={{ fontSize: 13 }}>
-              {s.drivers.length === 0 ? <small style={{ color: "#8aa0b6" }}>—</small> : s.drivers.map((d) => (
-                <div key={d.id}><b>{d.name}</b> <small style={{ color: "#8aa0b6" }}>· Kart {d.kartNumber}{d.transponder ? ` · T${d.transponder}` : ""}</small></div>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {s.resultId && (
-                <button className="primary-button" onClick={() => setResult(history.find((h) => h.id === s.resultId) ?? null)} disabled={!history.some((h) => h.id === s.resultId)} title="Podium, classement et QR souvenir">
-                  <Trophy size={14} /> Résultats
-                </button>
-              )}
-              {activeId === s.id
-                ? <span className="status-pill status-live" style={{ alignSelf: "center" }}><Radio size={12} /> ACTIVE</span>
-                : !s.resultId && <button className="secondary-button" onClick={() => setActive(s.id)}><Radio size={14} /> Activer</button>}
-              <button className="secondary-button" onClick={() => sendToApex(s.id)} title="Créer dans GoKarts (Apex)"><Zap size={14} /> Apex</button>
-              <button className="secondary-button" aria-label="Supprimer" onClick={() => remove(s.id)}><Trash2 size={14} /></button>
-            </div>
-          </article>
-        ))}
-      </section>
-
       <section className="qr-reservations-list" aria-label="Sessions GoKarts" style={{ marginTop: 18 }}>
         <div className="panel-header" style={{ padding: "0 4px 10px" }}>
           <div><span className="panel-kicker">GOKARTS · EN DIRECT</span><h2>Sessions sur le système de chronométrage</h2></div>
@@ -811,7 +811,6 @@ function SessionsView({ bridgeSync }: { bridgeSync: BridgeSync }) {
         <small style={{ color: "#8aa0b6", display: "block", marginTop: 8 }}>Le plan GoKarts affiche le nombre de pilotes. Les noms des pilotes nécessitent l’API Sessions (à obtenir d’Apex).</small>
       </section>
 
-      <ResultSheet result={result} onClose={() => setResult(null)} />
     </div>
   );
 }
@@ -1075,6 +1074,7 @@ const PAGE_SLUGS: Array<[string, string]> = [
   ["Pass & fidélité", "pass"],
   ["Packs & ventes", "packs"],
   ["Garage", "garage"],
+  ["Décaissements", "decaissements"],
   // The page's old name: a bookmark to #/carburant still opens it.
   ["Garage", "carburant"],
   ["Rapports", "rapports"],
@@ -1191,7 +1191,7 @@ export default function Home() {
       <div className="workspace">
         <Topbar openMenu={() => setMobileOpen(true)} search={search} setSearch={setSearch} />
         <main className="dashboard-content">
-          {active === "Course en direct" ? <LiveRaceView onOpenControls={() => navigateToPage("Sessions")} /> : active === "Liste d\u2019attente" ? <FileAttenteView search={search} /> : active === "Sessions" ? <SessionsView bridgeSync={bridgeSync} /> : active === "Statistiques" ? <StatsView /> : active === "Réservations" ? <ReservationsView search={search} /> : active === "Clients" ? <ClientsView search={search} /> : active === "Pass & fidélité" ? <PassLoyaltyView /> : active === "Packs & ventes" ? <PacksSalesView /> : active === "Garage" ? <GarageView /> : active === "Rapports" ? <ReportsView /> : <Overview search={search} onOpenQueue={() => navigateToPage("Liste d’attente")} />}
+          {active === "Course en direct" ? <LiveRaceView onOpenControls={() => navigateToPage("Sessions")} /> : active === "Liste d\u2019attente" ? <FileAttenteView search={search} /> : active === "Sessions" ? <SessionsView bridgeSync={bridgeSync} /> : active === "Statistiques" ? <StatsView /> : active === "Réservations" ? <ReservationsView search={search} /> : active === "Clients" ? <ClientsView search={search} /> : active === "Pass & fidélité" ? <PassLoyaltyView /> : active === "Packs & ventes" ? <PacksSalesView /> : active === "Garage" ? <GarageView /> : active === "Décaissements" ? <DisbursementsView /> : active === "Rapports" ? <ReportsView /> : <Overview search={search} onOpenQueue={() => navigateToPage("Liste d’attente")} />}
         </main>
       </div>
       <PageTransitionLoader visible={pageLoading} />

@@ -32,7 +32,13 @@ export type FuelDay = {
   updatedAt: string;
 };
 
-export type FuelState = { settings: FuelSettings; days: FuelDay[] };
+/**
+ * The barrel's running stock (lib/fuel-rules.mjs): the level known for sure at `baseAt` - full on
+ * day one, or a later fill or measurement - and every top-up since. Never reset by the calendar.
+ */
+export type Tank = { baseL: number; baseAt: string; refills: { at: string; litres: number }[] };
+
+export type FuelState = { settings: FuelSettings; days: FuelDay[]; tank: Tank | null };
 
 export const DEFAULT_FUEL_SETTINGS: FuelSettings = {
   capacityL: 500,
@@ -65,6 +71,15 @@ function migrateSettings(stored: Partial<FuelSettings>): FuelSettings {
   return settings;
 }
 
+/** Days from a moment to today, both counted (22/09 to 27/09 is 6), at most 120. */
+export function daysSince(iso: string): number {
+  const start = new Date(Date.parse(iso));
+  start.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.min(120, Math.max(1, Math.round((today.getTime() - start.getTime()) / 86_400_000) + 1));
+}
+
 export const todayKey = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
@@ -72,14 +87,14 @@ export const todayKey = (date = new Date()) =>
 export function readFuel(): FuelState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { settings: DEFAULT_FUEL_SETTINGS, days: [] };
+    if (!raw) return { settings: DEFAULT_FUEL_SETTINGS, days: [], tank: null };
     const parsed = JSON.parse(raw) as Partial<FuelState>;
-    return {
-      settings: migrateSettings(parsed.settings ?? {}),
-      days: Array.isArray(parsed.days) ? parsed.days : [],
-    };
+    const settings = migrateSettings(parsed.settings ?? {});
+    const days = Array.isArray(parsed.days) ? parsed.days : [];
+    // A log from before the running stock starts on its first day, the barrel full.
+    return { settings, days, tank: rules.tankFrom({ tank: parsed.tank, days }, settings.capacityL) };
   } catch {
-    return { settings: DEFAULT_FUEL_SETTINGS, days: [] };
+    return { settings: DEFAULT_FUEL_SETTINGS, days: [], tank: null };
   }
 }
 
@@ -93,7 +108,7 @@ export function writeFuel(state: FuelState) {
 
 // Small external store, so React can read localStorage through useSyncExternalStore instead of
 // copying it into state inside an effect. Other tabs stay in sync through the storage event.
-export const EMPTY_FUEL: FuelState = { settings: DEFAULT_FUEL_SETTINGS, days: [] };
+export const EMPTY_FUEL: FuelState = { settings: DEFAULT_FUEL_SETTINGS, days: [], tank: null };
 let cache: FuelState | null = null;
 const listeners = new Set<() => void>();
 
@@ -189,6 +204,14 @@ export const dayFuel = (races: TimingSavedRace[], stints: FreeStint[], settings:
   rules.dayFuel(races, stints, settings, day);
 export const liveFuelStock = (reading: FuelDay | null, fuel: DayFuel): { stockL: number; burnedL: number } =>
   rules.liveFuelStock(reading, fuel);
+
+export type TankStock = { stockL: number; baseL: number; since: number; refillL: number; burnedL: number; races: number; runs: number };
+/** Fuel left now: the known level, plus top-ups since, minus every race and free run since. */
+export const tankStock = (tank: Tank | null, races: TimingSavedRace[], stints: FreeStint[], settings: FuelSettings): TankStock | null =>
+  rules.tankStock(tank, races, stints, settings);
+export const tankFrom = (state: { tank?: Tank | null; days?: FuelDay[] }, capacityL: number): Tank | null => rules.tankFrom(state, capacityL);
+export const withRefill = (tank: Tank, litres: number): Tank => rules.withRefill(tank, litres);
+export const withLevel = (litresNow: number): Tank => rules.withLevel(litresNow);
 
 export const formatL = (litres: number, digits = 1) =>
   `${litres.toFixed(digits).replace(/\.0$/, "")} L`;

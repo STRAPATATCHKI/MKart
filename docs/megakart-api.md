@@ -1,9 +1,10 @@
 # MegaKart API — for the app's backend
 
-Read-only HTTPS access to MegaKart Fès: revenue, payments, reservations, every race lap by
-lap, and the race on track live. The venue PC pushes its data to Firebase; this API
+HTTPS access to MegaKart Fès: revenue, payments, reservations, every race lap by lap, the race
+on track live, and the décaissements waiting for approval. The venue PC pushes its data to Firebase; this API
 (`tools/megakart-api/api.mjs`, served by the MKart service on Render) serves it behind one key.
-It cannot write anything, and it cannot reach sign-ups, phone numbers, emails or signatures.
+It writes one thing only - the manager's answer to a décaissement - and it cannot reach sign-ups,
+phone numbers, emails or signatures.
 
 ## Settings for your service
 
@@ -50,6 +51,10 @@ unreachable, retry).
 | `/v1/reports/day.pdf?day=` | **the day report as a PDF file to download** (default: today): every race of the day with its pilots and laps, set against the day's payments — see below |
 | `/v1/reports/day?day=` | the same report as JSON, for an app that draws it itself |
 | `/v1/reports/day.html?day=` | the same report as a printable page |
+| `/v1/disbursements?status=&day=` | décaissements, newest first, each with its whole history — see below |
+| `/v1/disbursements/{id}` | one décaissement (by its id, or its code `DC-0007`) |
+| `/v1/disbursements/{id}/attachments/{photo id}` | a photo joined to it (the image itself) |
+| **POST** `/v1/disbursements/{id}/decision` | **approve or refuse** a décaissement — see below |
 | `/v1/garage` | fuel and spare parts: `fuel.today` (reading, stock left, barrel level `levelPct`, autonomy `hoursLeft`/`sessionsLeft`, burned by races and by karts going round outside a race, each race and run), `fuel.days`, `parts` (stock, to reorder, last 100 movements) |
 
 Field-by-field descriptions of payments, days, reservations and races are in
@@ -76,6 +81,54 @@ backend fetch it and hand the file to the app (never put the key in the app).
 Pilots are matched to payments by name, ignoring accents, case and small typing slips; a pack
 bought on another day is not counted, and reservations are kept 30 days (older days show races
 only).
+
+## Décaissements (money out, approved from the app)
+
+The desk asks for money to go out (fuel, a part, a supplier, an advance); the manager approves
+or refuses it from the app; the desk hands the money out only once approved. Nothing leaves
+the till without an answer.
+
+`GET /v1/disbursements?status=EN_ATTENTE` — the ones waiting for an answer (poll every 15–30 s,
+or show a badge). Each one:
+
+| field | meaning |
+|---|---|
+| `id`, `code` | identifier, and the code people read (`DC-0007`) |
+| `amount` | dirhams |
+| `category`, `categoryLabel` | `carburant`, `pieces`, `fournitures`, `fournisseur`, `personnel`, `marketing`, `loyer`, `autre` |
+| `description` | what it is for, as typed at the desk |
+| `beneficiary` | who receives the money (person or supplier) |
+| `method`, `methodLabel` | always `especes` — every décaissement is cash taken from the till |
+| `reference` | invoice or reference number, or null |
+| `urgent` | the desk marked it urgent: show it first |
+| `requestedBy`, `createdAt`, `day` | who asked, when |
+| `status`, `statusLabel` | `EN_ATTENTE` (waiting for the app), `APPROUVE`, `REFUSE`, `ANNULE` (withdrawn at the desk), `DECAISSE` (money handed out) |
+| `decision` | once decided: `decision` (`approve`/`refuse`), `by`, `at`, `comment`, `via` |
+| `paidOutAt`, `paidOutBy` | when and by whom the money was handed out |
+| `attachments[]` | photos joined at the desk (ticket, invoice, screenshot): `id`, `type`, `size`, `addedAt`, `path` — fetch the image itself at `path` (`GET /v1/disbursements/{id}/attachments/{photo id}`, same key, answers the JPEG/PNG) |
+| `history[]` | every step, oldest first: `at`, `event` (`cree`, `piece` photo added, `approuve`, `refuse`, `annule`, `decaisse`), `label`, `by`, `via` (`accueil` or `application`), `note` |
+
+**Deciding:**
+
+```
+POST /v1/disbursements/DC-0007/decision
+Authorization: Bearer <MEGAKART_API_KEY>
+Content-Type: application/json
+
+{ "decision": "approve", "by": "Karim Benali", "comment": "OK, garder la facture" }
+{ "decision": "refuse",  "by": "Karim Benali", "comment": "Pas de facture, redemander demain" }
+```
+
+- `decision`: `approve` or `refuse`. `by`: the name of the person deciding (required).
+  `comment`: optional to approve, **required to refuse** (the desk shows it).
+- `202` `{ status: "ENVOYEE", id, code, decision, pcOnline, message }`: the decision is on its way to
+  the venue PC, which applies it within ~5 s when it is on (later, as soon as it is switched on,
+  when it is not — `pcOnline` says which). Read the décaissement again to see its new `status`
+  and `history`.
+- `409`: already decided, withdrawn, or a decision is already on its way — `disbursement` gives
+  its current state. `404`: unknown. `400`: see `error`.
+
+A decision cannot be changed once applied: the history keeps who decided, when and why.
 
 ## Following a race live
 

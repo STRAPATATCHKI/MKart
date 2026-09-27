@@ -11,6 +11,7 @@
 @import "./chrono.css";
 @import "./file-attente.css";
 @import "./live-race.css";
+@import "./disbursements.css";
 
 :root {
   --bg: #050604;

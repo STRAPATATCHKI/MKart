@@ -10,6 +10,8 @@ import {
   subscribeFuel,
   todayKey,
   upsertDay,
+  withLevel,
+  withRefill,
   type FuelDay,
   type FuelSettings,
 } from "@/lib/fuel-store";
@@ -20,11 +22,11 @@ import {
  * only means the app is a little behind.
  */
 function copyToDesk() {
-  const { settings, days } = getFuelSnapshot();
+  const { settings, days, tank } = getFuelSnapshot();
   void fetch("/api/fuel", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ settings, days: sortDays(days).slice(0, 120) }),
+    body: JSON.stringify({ settings, days: sortDays(days).slice(0, 120), tank }),
   }).catch(() => {});
 }
 
@@ -48,8 +50,22 @@ export function useFuel() {
     copyToDesk();
   }, []);
 
+  // Poured in now: added to the running stock.
+  const addRefill = useCallback((litres: number) => {
+    const current = getFuelSnapshot();
+    const tank = current.tank ?? withLevel(0);
+    setFuelState({ ...current, tank: withRefill(tank, litres) });
+    copyToDesk();
+  }, []);
+
+  // Filled up, or measured: the count starts again from this level, now.
+  const setLevel = useCallback((litres: number) => {
+    setFuelState({ ...getFuelSnapshot(), tank: withLevel(litres) });
+    copyToDesk();
+  }, []);
+
   const days = sortDays(state.days);
   const today = days.find((d) => d.date === todayKey()) ?? null;
 
-  return { settings: state.settings, days, today, saveDay, saveSettings };
+  return { settings: state.settings, days, today, tank: state.tank, saveDay, saveSettings, addRefill, setLevel };
 }

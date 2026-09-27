@@ -96,3 +96,23 @@ test("parts: a saved file is checked before it is trusted", () => {
   assert.equal(g.moves.length, 0);
   assert.ok(G.SEED_GARAGE.parts.length > 5 && G.SEED_GARAGE.parts.every((p) => p.stock === 0));
 });
+
+test("the running stock: a top-up adds, a fill or a measurement starts the count again", () => {
+  const settings = { ...F.DEFAULT_FUEL_SETTINGS, gtLph: 10 };
+  const t = (d, h) => new Date(2026, 8, d, h, 0).getTime() / 1000;
+  const race = (d, h) => ({ raceId: `${d}-${h}`, name: "S", startedAt: t(d, h), finishedAt: t(d, h) + 480, racers: [{ kart: 3, laps: 5 }] });
+  const races = [race(22, 18), race(25, 18), race(27, 18)];
+  const burned = Math.round(10 * (8 / 60) * 100) / 100;
+  const dayOne = F.tankFrom({ days: [{ date: "2026-09-25", openingL: 500, refillL: 0 }, { date: "2026-09-22", openingL: 500, refillL: 20 }] }, 500);
+  assert.equal(dayOne.baseAt, new Date(2026, 8, 22).toISOString(), "the first day of the log");
+  assert.deepEqual(dayOne.refills.map((r) => r.litres), [20], "top-ups typed before are kept");
+  const stock = F.tankStock(dayOne, races, [], settings);
+  assert.equal(stock.races, 3);
+  assert.equal(stock.stockL, Math.round((500 + 20 - 3 * burned) * 100) / 100);
+  // Filled to 480 L on the 26th: only what came after counts.
+  const refilled = { baseL: 480, baseAt: new Date(2026, 8, 26, 9).toISOString(), refills: [{ at: new Date(2026, 8, 27, 10).toISOString(), litres: 10 }] };
+  const after = F.tankStock(refilled, races, [], settings);
+  assert.deepEqual([after.races, after.refillL, after.stockL], [1, 10, Math.round((480 + 10 - burned) * 100) / 100]);
+  assert.equal(F.tankStock(null, races, [], settings), null);
+  assert.equal(F.daysSince(new Date(Date.now() - 5 * 86_400_000).toISOString()), 6);
+});

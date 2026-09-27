@@ -8,7 +8,7 @@
 // go - a race without its drivers, or a payment without its payer, is not much of a report -
 // and the rules let only accounts listed under /staff read any of it.
 
-import { dayFuel, fuelDayKey, fuelEstimate, liveFuelStock } from "../../lib/fuel-rules.mjs";
+import { dayFuel, fuelDayKey, fuelEstimate, tankFrom, tankStock } from "../../lib/fuel-rules.mjs";
 
 const PAID = new Set(["PAYEE", "EN_PISTE", "TERMINEE"]);
 /** Reservations are sent for this many days; payments, day totals and races are kept for good. */
@@ -224,31 +224,37 @@ export function diffUpdates(prefix, desired, pushed) {
 const FUEL_DEFAULTS = { capacityL: 500, juniorLph: 2.4, gtLph: 10, juniorKarts: 4, gtKarts: 8, sessionMinutes: 8, reserveL: 75, juniorKartNumbers: [] };
 
 /**
- * The Garage for the app: the fuel of the day (the morning reading, then every race and every
- * kart that went round outside a race since, at the JUNIOR or GT rate - lib/fuel-rules.mjs, the
- * same rules as the dashboard), and the spare parts (the shelf, what to reorder, what went on
- * which kart). `fuelFile` and `garageFile` are the desk's fuel.json and garage.json.
+ * The Garage for the app: the barrel's running stock (the level known on day one or at the last
+ * fill, plus top-ups, minus every race and every kart that went round outside a race since, at
+ * the JUNIOR or GT rate - lib/fuel-rules.mjs, the same rules as the dashboard), today's fuel, and
+ * the spare parts (the shelf, what to reorder, what went on which kart). `fuelFile` and
+ * `garageFile` are the desk's fuel.json and garage.json; `races` and `stints` must reach back to
+ * the start of the running stock.
  */
 export function garageDoc({ fuelFile, garageFile, races, stints, now = new Date() }) {
   const settings = { ...FUEL_DEFAULTS, ...((fuelFile && fuelFile.settings) || {}) };
   if (!Array.isArray(settings.juniorKartNumbers)) settings.juniorKartNumbers = [];
   const day = fuelDayKey(now.getTime());
   const fuel = dayFuel(races || [], stints || [], settings, day);
-  const reading = ((fuelFile && fuelFile.days) || []).find((d) => d && d.date === day) || null;
-  const { stockL, burnedL } = liveFuelStock(reading, fuel);
-  const estimate = fuelEstimate(stockL, settings);
+  const tank = tankFrom(fuelFile, settings.capacityL);
+  const stock = tankStock(tank, races || [], stints || [], settings);
+  const stockL = stock ? stock.stockL : null;
+  const estimate = fuelEstimate(Math.max(0, stockL ?? 0), settings);
   const r2 = (v) => Math.round(v * 100) / 100;
   const fuelToday = {
     day,
-    readingL: reading ? reading.openingL : null, refillL: reading ? reading.refillL || 0 : 0,
-    measuredAt: reading && reading.measuredAt ? Date.parse(reading.measuredAt) : null,
-    stockL: reading ? stockL : null, burnedSinceReadingL: burnedL,
-    capacityL: settings.capacityL, reserveL: settings.reserveL, low: reading ? stockL <= settings.reserveL : false,
-    // The barrel drawing's level, 0-100 (null before the morning reading), and the "Autonomie":
-    // hours and standard sessions the stock lasts with the whole fleet on track.
-    levelPct: reading ? Math.round(estimate.level * 100) : null,
-    hoursLeft: reading ? r2(estimate.hoursLeft) : null,
-    sessionsLeft: reading ? estimate.sessionsLeft : null,
+    // The running stock: the level known at `measuredAt` (full on day one, or the last fill or
+    // measurement), the litres poured in since, and what races and free runs burned since.
+    readingL: tank ? tank.baseL : null, refillL: stock ? stock.refillL : 0,
+    measuredAt: tank ? Date.parse(tank.baseAt) : null,
+    stockL, burnedSinceReadingL: stock ? stock.burnedL : 0,
+    racesSinceReading: stock ? stock.races : 0, runsSinceReading: stock ? stock.runs : 0,
+    capacityL: settings.capacityL, reserveL: settings.reserveL, low: stockL != null && stockL <= settings.reserveL,
+    // The barrel drawing's level, 0-100, and the "Autonomie": hours and standard sessions the
+    // stock lasts with the whole fleet on track.
+    levelPct: stockL != null ? Math.round(estimate.level * 100) : null,
+    hoursLeft: stockL != null ? r2(estimate.hoursLeft) : null,
+    sessionsLeft: stockL != null ? estimate.sessionsLeft : null,
     sessionMinutes: settings.sessionMinutes, fleetLph: r2(estimate.fleetLph),
     fleet: { junior: settings.juniorKarts, gt: settings.gtKarts },
     racesL: fuel.racesL, freeRunsL: fuel.freeL, totalL: fuel.totalL,
